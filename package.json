@@ -1,0 +1,15 @@
+{
+  "name": "merit",
+  "version": "0.1.0",
+  "description": "Merit — sybil-resistant, settled-money-weighted agent reputation for Monad (Metropolis Track 04). See Plan.md.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "node src/index.mjs"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "viem": "^2.0.0"
+  }
+}
