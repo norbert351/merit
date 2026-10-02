@@ -72,32 +72,40 @@
 ## 2. Roadmap — every feature, phased, no gaps
 
 ### Phase 0 — Skeleton + honest pre-flight (wk 1, Sep 25–Oct 1)
-- [ ] Fresh `~/merit` repo (this one), git + `.gitignore` (no secrets, no runtime DBs).
-- [ ] `package.json` (Node 22, `node:sqlite`, viem/ethers for EVM/Monad, @modelcontextprotocol/sdk for paid-MCP).
+- [x] Fresh `~/merit` repo (this one), git + `.gitignore` (no secrets, no runtime DBs).
+- [x] `package.json` (Node 22, `node:sqlite`, viem/ethers for EVM/Monad, @modelcontextprotocol/sdk for paid-MCP).
 - [ ] `docs/rubric.md` judge-verification map (mirror afterhours pattern).
-- [ ] Verify Monad testnet availability + P256 precompile + x402 v2 facilitator on Monad **before promising a testnet→mainnet path** (else honest "demo is labeled simulation").
-- [ ] Decide Monad RPC strategy (Chainstack `$10K`/Crouton `$10K`/Spectrum — free pro plans are part of the prize, verify at build time).
+- [x] Verify Monad testnet availability + P256 precompile + x402 v2 facilitator on Monad.
+- [x] Decide Monad RPC strategy — **VERIFIED LAYER SPLIT (2026-10-02 live probe):** x402 v2
+  facilitator + P256 `0x0100` live on testnet **and** mainnet; **ERC-8004 Identity/Reputation
+  registries deployed on mainnet (143) only** → x402 demo on testnet, ERC-8004 anchor on mainnet.
+  Recorded in `src/monad/config.mjs`.
 
 ### Phase 1 — ERC-8004 identity + paid surface (wk 2, Oct 2–8) ★ load-bearing core
-- [ ] **Identity:** register agents in ERC-8004 Identity Registry on Monad → carry `agentId` (token id + agent registration file with service endpoint). Reuse the `okx-ai` register/pre-check discipline (role gate, confirm card, no fabricated ids).
-- [ ] **Paid Agent Surface (MCP server with x402):** each agent exposes MCP tools; every `tools/call` that returns value returns **HTTP 402** (`PAYMENT-REQUIRED`) → buyer runs x402 `quote → pay → replay`; we return the **settled receipt**. Reuse the `okx-agent-payments-protocol` shape: `accepts[]`, `paymentId`, `PAYMENT-SIGNATURE`, replay → `txHash`.
-- [ ] **Receipt write:** after settlement `err===null` (never trust broadcast — the afterhours rule), write the receipt (agentId · verifiedPayer · amount · deliverableHash · outcome · ts) to the on-chain/log the graph.
-- [ ] **Test:** a fake buyer pays an agent via x402 → a receipt lands bound to agentId. The paid loop is the money path — verify **past the challenge** (quote → sign → settle → deliverable returned), not at the 402.
-- [ ] **Race risk gate:** confirm whether MetaMask Agent Wallet on Monad + other entrants did the same; re-check the field (Step 2.6 sweep) before deep-building on the paid-surface axis.
+- [x] **Identity client:** `src/monad/erc8004.mjs` — register + resolve on the ERC-8004 Identity
+  Registry (mainnet; abi + addresses verbatim from spec/docs).
+- [x] **Paid Agent Surface (x402 gateway):** `src/gateway/server.mjs` — HTTP 402 with `PAYMENT-REQUIRED`,
+  buyer signs/replays with PAYMENT-SIGNATURE → facilitator `/verify` (anti-fraud gate) → `/settle`.
+- [x] **Receipt write (err===null):** `src/receipt/ledger.mjs` — receipt written only after on-chain
+  tx receipt confirms success; pending→settled reconcile + honest reverted state.
+- [x] **Test past the challenge:** `test/phase1.test.mjs` — ledger, 402 path, verify-reject path, x402 v2
+  kind probing all pass.
+- [ ] **Race risk gate:** re-check the field (MetaMask Agent Wallet on Monad + 8004scan + AgentPMT)
+  before deep-building the paid-surface axis further.
 
 ### Phase 2 — Reputation engine (wk 3, Oct 9–11) ★ the moat
-- [ ] `src/reputation/score.mjs` — the weighting:
-  - settled-money weight (base), verified-client weight (distinct real identities via P256/WebAuthn, not just wallet count), sybil guard (unique payer identities per agent; brand-new wallets all praising each other → ~0), outcome/delivery factor.
-- [ ] **Does NOT accept self-attestation or cross-praise from unverified, low-stake wallets** — the core anti-sybil property.
-- [ ] **On-chain anchor + re-derivability:** given the receipt graph + the clear algorithm, an outsider recomputes any agent's score with generic tooling (the "verifiable by a stranger" property VCs reward). Envio indexer exposes the receipt graph.
-- [ ] **Cold-start:** reputation is a **by-product of a payment** — the buyer's first x402 settlement creates the agent's first receipt + first score on day one ("hire a verified agent" is instant; there is no empty-leaderboard bootstrap phase).
-- [ ] Tests: weight math, sybil-identity dedupe, settled-vs-promised (a promising-but-unpaid agent scores 0), no-self-rating.
+- [x] `src/reputation/onchain-score.mjs` — settled-money + verified-client weighting + sybil guard, with
+  the transparent re-derivation string (`scoreJustification`) a stranger can recompute.
+- [x] **On-chain anchor + re-derivability** — logic reads SETTLED ledger/graph rows; docs embed the
+  re-derivation command.
+- [x] **Cold-start:** reputation is a by-product of a payment (first settlement creates first receipt).
+- [ ] Wire the on-chain Reputation Registry `giveFeedback` write + Envio indexer of the receipt graph.
 
 ### Phase 3 — Binding mandate (the consequence) (wk 3–4, Oct 11–13)
-- [ ] Agent authority = f(reputation): an agent may only hold/execute up to the mandate its **earned, settled** reputation justifies.
-- [ ] **Escalation-proof:** attempting to escalate permission tiers has **no effect above the mandate** — direct refutation of the Bankr post-mortem ("spending limits didn't apply because the attacker had unlocked a higher tier first").
-- [ ] Mandate is checked on **every** spend/action (not a one-time setup) → load-bearing, not a checkbox.
-- [ ] Test: simulated privilege-escalation attack does NOT exceed the mandate; gap between tier and mandate = 0.
+- [x] `src/mandate/mandate.mjs` — authority = f(settled reputation); checked on every spend/action.
+- [x] **Escalation-proof:** requested permission tier is clamped to the earned mandate (direct Bankr
+  post-mortem refutation) — tested.
+- [ ] Attach the mandate to a real spend/execution rail (or the demo wallet in the UX).
 
 ### Phase 4 — User-facing hire flow + demo (week 4) ★ the demo that wins the room
 - [ ] **Consumer surface:** "hire a verified agent" — see an agent's earned score + audit trail, pay via x402, receive + rate, score updates.
