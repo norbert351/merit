@@ -8,20 +8,31 @@
 
 ## Status
 - ✅ **Plan locked** → `Plan.md` (every feature, phased, no gaps)
-- ✅ Scaffold: scoring core + sybil guard + the two winning demos as passing tests
-- ⏳ Phase 1: ERC-8004 identity + paid-MCP/x402 gateway + receipt graph (starts after Stocklana submit + BSC port)
+- ✅ **Phase 0** — own git repo; deps installed; Monad rails live-verified (x402 v2 facilitator on
+  testnet+mainnet, P256 `0x0100`; ERC-8004 registries deployed on **mainnet only** — layer split recorded
+  in `src/monad/config.mjs`)
+- ✅ **Phase 1** — ERC-8004 identity client, x402 facilitator client, paid-MCP gateway (HTTP 402 →
+  verify → settle → receipt), `err===null` receipt ledger
+- ✅ **Phase 2** — on-chain re-derivable score (`onchain-score.mjs`)
+- ✅ **Phase 3** — binding, escalation-proof mandate (`mandate.mjs`)
+- ✅ **13/13 tests pass** + full demo launcher (`npm start`)
 
 ## Run the moat proof
 ```bash
-npm test
+npm test        # 13 tests
+npm start       # the demo launcher: both sock-puppet demos + the escalation-proof mandate
 ```
-The two demos are real, deterministic tests, ready to become on-chain receipts:
+The two winning demos are real, deterministic tests, ready to become on-chain receipts:
 1. 50 sock-puppet agents praising each other → score **stays 0**.
 2. One real paying customer settles via x402 → score **moves** and the mandate unlocks.
 
 ## Key links
 - `Plan.md` — the master plan (thesis, anti-thesis test, architecture, roadmap, risks, gating)
 - `src/reputation/` — the sybil-resistant scoring engine (the moat)
-- `docs/` — to be filled with rubric/SUBMISSION (afterhours structure, fresh content)
+- `src/reputation/onchain-score.mjs` — transparent, re-derivable by a stranger
+- `src/mandate/mandate.mjs` — the binding, escalation-proof authority cap
+- `src/gateway/server.mjs` + `src/x402/facilitator.mjs` — the paid x402 money path
+- `src/receipt/ledger.mjs` — the settled-receipt audit graph (err===null only)
+- `docs/` — rubric/SUBMISSION (afterhours structure, fresh content)
 
 > This is a **separate build from AfterHours** (the tokenized-equity gap agent). It shares only the `err===null`-verify + x402 + docs-discipline patterns — not the repo, not the thesis.
