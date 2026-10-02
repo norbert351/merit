@@ -7,3 +7,8 @@ data/
 *.db-wal
 *.db-shm
 demo/
+# foundry build artifacts (regenerate via forge build)
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
