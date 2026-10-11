@@ -6,9 +6,9 @@ import { createPublicClient, http, formatUnits } from "viem";
 import { MONAD } from "../monad/config.mjs";
 
 export const MERIT_CONTRACTS_TESTNET = {
-  identity: "0x355A0d78153eF5ba882511275EB8976438844C67",
-  reputation: "0x38610eFDE0F68CA4BC2d4F56d3540B9A68B2162d",
-  mandate: "0x83E4176FE2295a9898E2AC01fdA51b8443F282ED",
+  identity: "0xD85ddb55316dD0F9D46Ec9BBb92A8A1FFE2E278c",
+  reputation: "0x92A11Ad0E988C6cd0Bd434e140331A620393114D",
+  mandate: "0xa8071a14D27E90923204a1B5098658611AC4E17d",
 };
 
 const chain = { ...MONAD.testnet };

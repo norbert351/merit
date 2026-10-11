@@ -50,13 +50,15 @@ per-agent **receipt trail**, pay via **HTTP 402 → sign → settle**, watch the
 **bound-authority mandate** clamp an escalation attempt. Mobile-first, honest labeling (demo vs live).
 
 ## Verified vs. not-yet (honest)
-**Verified live (2026-10-11):** 20/20 JS tests pass; 8/8 Foundry contract tests pass; both demos
-deterministic over HTTP; the hire-then-settle API + UI; x402 v2 facilitator reachable on
-testnet+mainnet; P256 `0x0100` present; ERC-8004 registries deployed on mainnet; Envio indexer
-config + enriched on-chain events. See `docs/rubric.md` for the full per-claim matrix — including
-what is *not* yet on-chain (a live `register()`/`settle()` needs a funded wallet + executor key; the
-code path is ready in `src/monad/settle.mjs`) and what's planned (video, hosted indexer, live deploy).
-**No blanket "all good."**
+**Verified live (2026-10-11):** 21/21 JS tests pass; 8/8 Foundry contract tests pass; the merchant
+contract suite is **deployed and live on Monad testnet** (`MeritReputation` `0x92A1…114D`) and a real
+x402 `recordReceipt` tx settled on-chain (tx `0x3dd89821…`, status 1) — moving agent #1's score
+on-chain; both demos deterministic over HTTP; the hire-then-settle API + UI; x402 v2 facilitator
+reachable on testnet+mainnet; P256 `0x0100` present; ERC-8004 registries deployed on mainnet; Envio
+indexer config + enriched on-chain events confirmed emitting. See `docs/rubric.md` for the full
+per-claim matrix — including what is *not* yet on-chain (registering against the **canonical mainnet**
+ERC-8004 registry needs a funded mainnet wallet) and what's planned (video, hosted indexer, live
+deploy). **No blanket "all good."**
 
 ## Links
 - Code: `github.com/norbert351/merit`

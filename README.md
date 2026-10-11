@@ -16,7 +16,8 @@
 - ✅ **Phase 2** — on-chain re-derivable score (`onchain-score.mjs`) **+ Envio indexer** of the receipt graph (`indexer/`)
 - ✅ **Phase 3** — binding, escalation-proof mandate (`mandate.mjs`) + on-chain `MeritReputation.recordReceipt`/`scoreOf`
 - ✅ **Phase 4** — hire-then-settle **API + UI** (`src/api/server.mjs` + `public/`), mobile-first, honest live/demo labeling
-- ✅ **20/20 JS tests pass** + **8/8 contract tests pass** + full demo launcher (`npm start`)
+- ✅ **21/21 JS tests pass** + **8/8 contract tests pass** + full demo launcher (`npm start`)
+- ✅ **LIVE on Monad testnet** — merchant suite at `0x92A1…114D`; real x402 `recordReceipt` tx settled on-chain (err===null)
 
 ## Run it
 

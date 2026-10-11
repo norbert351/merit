@@ -72,7 +72,14 @@ async function loadLive(){
       const target=AGENTS.find(x=>String(x.id)===String(a.id||a.agentId));
       if(target){
         target.receipts=(a.receipts||[]).map(r=>({payer:r.payer,verified:r.verified,amountUsd:r.amountUsd,delivered:r.delivered,hash:r.hash||r.txHash}));
-        target._live=true; target._score=score; target._mandate=a.mandate;
+        target._live=true;
+        target._score=score;
+        target._settled=(a.score&&a.score.settledUsd)??0;
+        target._effSettled=(a.score&&a.score.effectivelySettledUsd)??0;
+        target._dv=(a.score&&a.score.distinctVerifiedClients)??0;
+        target._sybil=!!(a.score&&a.score.sybilDetected)||!!(a.sybil&&a.sybil.detected);
+        target._sybilCluster=(a.sybil&&a.sybil.clusterSize)??0;
+        target._mandate=a.mandate;
       }
     });
     updateLiveBadges();
@@ -114,7 +121,7 @@ function updateNav(){
 /* ---- browse ---- */
 function renderBrowse(app){
   const grid=$("#agentGrid",app); grid.innerHTML="";
-  const sorted=[...AGENTS].sort((a,b)=>scoreAgent(b.receipts).score-scoreAgent(a.receipts).score);
+  const sorted=[...AGENTS].sort((a,b)=>scoreOfAgent(b).score-scoreOfAgent(a).score);
   sorted.forEach(a=>{ grid.appendChild(agentCard(a)); });
   renderHeroLedger(app);
 }
@@ -127,8 +134,18 @@ function ringMarkup(score){
 }
 function afterPaintAnimate(cont){ cont.querySelectorAll(".ring .fg").forEach(c=>{ requestAnimationFrame(()=>c.setAttribute("stroke-dashoffset", c.dataset.target)); }); }
 
+/* Prefer the LIVE API score when present (agent 1 reads the deployed contract directly);
+   otherwise recompute from the local receipts with the same engine. Keeps cards honest. */
+function scoreOfAgent(a){
+  if(a._live && a._score!=null){
+    return {score:a._score, settledUsd:a._settled??0, effectivelySettledUsd:a._effSettled??a._settled??0,
+      distinctVerifiedClients:a._dv??0, sybil:{detected:!!a._sybil, clusterSize:a._sybilCluster??0}};
+  }
+  return scoreAgent(a.receipts);
+}
+
 function agentCard(a){
-  const s=scoreAgent(a.receipts);
+  const s=scoreOfAgent(a);
   const tier=s.sybil.detected?"sybil":(s.score>0?"safe":"safe");
   const liveTag = a._live ? (LIVE.mode==="live" ? "live · on-chain" : "live · demo ledger") : "";
   const label=s.sybil.detected?`${s.sybil.clusterSize} unverified dust payers suppressed (score ${s.score})`:(a._live?liveTag:AGENTS.length?s.score>0?`${s.distinctVerifiedClients} verified buyer${s.distinctVerifiedClients===1?"":"s"} · ${fmtUsd(s.effectivelySettledUsd)} settled`:"0 settled calls — score 0": "0 settled");
@@ -156,11 +173,11 @@ function agentCard(a){
 
 function renderHeroLedger(app){
   const led=$("#heroLedger",app); if(!led) return;
-  const s=scoreAgent(AGENTS[0].receipts);
+  const s=scoreOfAgent(AGENTS[0]);
   led.innerHTML="";
-  const top=[...AGENTS].sort((a,b)=>scoreAgent(b.receipts).score-scoreAgent(a.receipts).score).slice(0,4);
+  const top=[...AGENTS].sort((a,b)=>scoreOfAgent(b).score-scoreOfAgent(a).score).slice(0,4);
   top.forEach(a=>{
-    const ss=scoreAgent(a.receipts);
+    const ss=scoreOfAgent(a);
     led.appendChild(el("div",{class:"led-row"},
       el("span",{class:"who"},esc(a.name)),
       el("span",{class:"chip "+(ss.sybil.detected?"u":"v")},ss.sybil.detected?"sybil":"verified"),
@@ -181,7 +198,7 @@ const html=(s)=>({__html:s});
 function renderDetail(app,id){
   const a=AGENTS.find(x=>String(x.id)===String(id))||AGENTS[0];
   app.innerHTML=$("#t-detail").innerHTML;
-  const s=scoreAgent(a.receipts); const m=mandateFor(s.score);
+  const s=scoreOfAgent(a); const m=mandateFor(s.score);
   $("#detHead",app).appendChild(el("div",{class:"det-head"},
     el("div",{class:"agent-avatar"},esc(a.name[0])),
     el("div",null,
@@ -235,7 +252,7 @@ function wireProof(app,a,s){
   }));
   const ea=app.querySelector('[data-action="try-escalate"]');
   if(ea) ea.addEventListener("click",()=>{
-    const cur=scoreAgent(a.receipts); // recompute fresh — the ledger may have moved since render
+    const cur=scoreOfAgent(a); // fresh — reflects the live on-chain score when attached
     const mb=mandateFor(cur.score);
     const res=enforceMandate(cur.score,{requestedTier:3,requestedSpendUsd:Math.max(20, mb.max*2)});
     const box=$("#escStatus",app); box.hidden=false; const blocked=!res.allowed;
@@ -265,11 +282,12 @@ function doSettle(app,a,s){
           const r=await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json","payment-signature":"demo-sig"},body:JSON.stringify({agentId:a.id,payer:"0xbuyer",amountUsd:amt})});
           const j=await r.json();
           if(j.ok){
-            a.receipts.push({payer:j.payer||"0xbuyer",verified:true,amountUsd:amt,delivered:true,hash:j.txHash||"receipt"});
             const live = j.mode==="live" ? `Settled on-chain: ${j.txHash}` : `Settled (demo ledger): ${j.txHash}`;
             flash(st,"ok",`${live} · score ${s.score} → ${j.newScore}`);
             LIVE.mode=j.mode;
-          } else flash(st,"err","Settle failed: "+(j.error||"unknown"));
+            // Re-read the authoritative state (on-chain for the live agent) and re-render.
+            await refreshAgent(a, base);
+          } else flash(st,"err","Settle failed: "+(j.error||j.reason||"unknown"));
         } else {
           const j=await challenge.json().catch(()=>({}));
           flash(st,"err","Unexpected response: "+(j.error||challenge.status));
@@ -278,13 +296,32 @@ function doSettle(app,a,s){
         a.receipts.push({payer:"0xbuyer",verified:true,amountUsd:amt,delivered:true,hash:"demo-receipt"});
         flash(st,"ok",`(in-browser demo) x402 settled ${fmtUsd(amt)} → receipt stamped on ledger. Score: ${s.score} → ${scoreAgent(a.receipts).score}. Start the API (npm run api) to settle live.`);
       }
-      renderLedger($("#detLedger",app), a.receipts, LIVE.ok);
-      renderMandate($("#mandateMeter",app), scoreAgent(a.receipts).score);
+      renderLedger($("#detLedger",app), a.receipts, LIVE.ok && a._live);
+      renderMandate($("#mandateMeter",app), scoreOfAgent(a).score);
     }catch(e){ flash(st,"err","Settle failed: "+e.message); }
     btn.disabled=false;
   },600);
 }
 function flash(el,kind,msg){ el.className="pay-status "+kind; el.innerHTML=esc(msg); }
+
+/* Re-read a single agent's authoritative state from the API and fold it into the local model. */
+async function refreshAgent(a, base){
+  try{
+    const r=await fetch(`${base}/api/agent/${a.id}`,{signal:AbortSignal.timeout(6000)});
+    if(!r.ok) return;
+    const j=await r.json(); const A=j.agent; if(!A) return;
+    a.receipts=(A.receipts||[]).map(x=>({payer:x.payer,verified:x.verified,amountUsd:x.amountUsd,delivered:x.delivered,hash:x.hash||x.txHash}));
+    a._live=true;
+    a._score=(A.score&&A.score.scoreUsd)??a._score;
+    a._settled=(A.score&&A.score.settledUsd)??0;
+    a._effSettled=(A.score&&A.score.effectivelySettledUsd)??0;
+    a._dv=(A.score&&A.score.distinctVerifiedClients)??0;
+    a._sybil=!!(A.score&&A.score.sybilDetected);
+    a._sybilCluster=(A.sybil&&A.sybil.clusterSize)??0;
+    a._mandate=A.mandate;
+    if(A.source) LIVE.mode = A.source==="chain" ? "live" : LIVE.mode;
+  }catch(e){ /* keep last-known state */ }
+}
 
 function toast(msg){ const t=document.createElement("div"); t.style.cssText="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:99px;font-size:13.5px;z-index:200;box-shadow:0 10px 30px rgba(0,0,0,.3)"; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2200); }
 

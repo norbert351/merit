@@ -98,16 +98,22 @@ export async function agentView(a) {
   let rows = (await receiptsForAgent(a.id)).filter((r) => r.status === "settled");
   const s = onchainScore(rows);
   const m = mandateFor(s.score);
+  const TIER_NAMES = ["none", "low", "medium", "high"];
   let source = "ledger";
   let onchain = null;
+  let onchainMandate = null;
   if (hasExecutor() && a.id === 1) {
     // Only agentId 1 is the deployed live agent; read contract only when a reader is present.
     try {
-      const { onchainScoreOf } = await import("../monad/merit-contracts.mjs");
+      const { onchainScoreOf, onchainMandateOf } = await import("../monad/merit-contracts.mjs");
       onchain = await onchainScoreOf(a.id);
+      onchainMandate = await onchainMandateOf(a.id);
       source = "chain";
     } catch { /* honest fallback to ledger */ }
   }
+  const mandate = source === "chain" && onchainMandate
+    ? { tier: TIER_NAMES.indexOf(onchainMandate.tier), maxSpendUsd: onchainMandate.maxSpendUsd, tierName: onchainMandate.tier }
+    : { tier: m.tier, maxSpendUsd: m.max, tierName: TIER_NAMES[m.tier] };
   return {
     id: a.id, agentId: a.id, name: a.name, area: a.area, uri: a.uri, addr: a.addr, desc: a.desc,
     score: source === "chain" && onchain ? { scoreUsd: onchain.scoreUsd, ...onchain } : {
@@ -118,7 +124,7 @@ export async function agentView(a) {
       sybilDetected: s.sybil.detected,
     },
     sybil: s.sybil,
-    mandate: { tier: m.tier, maxSpendUsd: m.maxSpendUsd, tierName: TIERS[m.tier] },
+    mandate,
     source,
     rederive: scoreJustification(rows),
     receipts: rows.map((r) => ({

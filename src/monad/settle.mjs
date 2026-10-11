@@ -7,7 +7,7 @@
 // delivered, deliverableHash) and then WAIT for the receipt. A settled receipt is recorded IFF
 // the tx status === "success". We never trust the broadcast alone.
 
-import { createWalletClient, createPublicClient, http, keccak256, toHex } from "viem";
+import { createWalletClient, createPublicClient, http, keccak256, toHex, getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { MONAD } from "./config.mjs";
 import { MERIT_CONTRACTS_TESTNET } from "./merit-contracts.mjs";
@@ -57,11 +57,14 @@ export async function settleOnChain({ agentId, payer, amountMicroUsd, verified =
     const hash32 = deliverableHash && /^0x[0-9a-fA-F]{64}$/.test(deliverableHash)
       ? deliverableHash
       : keccak256(toHex(deliverableHash || `${agentId}:${payer}:${Date.now()}`));
+    // Normalize the payer to its EIP-55 checksummed form — viem rejects non-checksummed
+    // addresses, and real payers arrive in all-lowercase from x402 payloads.
+    const payerAddr = getAddress(payer);
     const txHash = await c.wallet.writeContract({
       address: MERIT_CONTRACTS_TESTNET.reputation,
       abi: REP_ABI,
       functionName: "recordReceipt",
-      args: [BigInt(agentId), payer, BigInt(amountMicroUsd), verified, delivered, hash32],
+      args: [BigInt(agentId), payerAddr, BigInt(amountMicroUsd), verified, delivered, hash32],
     });
     const rec = await c.pub.waitForTransactionReceipt({ hash: txHash });
     return { ok: rec.status === "success", txHash };

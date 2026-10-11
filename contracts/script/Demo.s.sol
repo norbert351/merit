@@ -17,9 +17,9 @@ import { MeritMandate } from "../src/MeritMandate.sol";
 /// requested HIGH-tier spend (expect denied).
 contract DemoScript is Script {
     function run() external {
-        MeritIdentity identity = MeritIdentity(0x355A0d78153eF5ba882511275EB8976438844C67);
-        MeritReputation reputation = MeritReputation(0x38610eFDE0F68CA4BC2d4F56d3540B9A68B2162d);
-        MeritMandate mandate = MeritMandate(0x83E4176FE2295a9898E2AC01fdA51b8443F282ED);
+        MeritIdentity identity = MeritIdentity(0xD85ddb55316dD0F9D46Ec9BBb92A8A1FFE2E278c);
+        MeritReputation reputation = MeritReputation(0x92A11Ad0E988C6cd0Bd434e140331A620393114D);
+        MeritMandate mandate = MeritMandate(0xa8071a14D27E90923204a1B5098658611AC4E17d);
 
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address executor = vm.addr(pk);

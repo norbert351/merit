@@ -34,7 +34,7 @@ frameworks."*
 
 | Claim | Status | How to verify |
 |---|---|---|
-| `npm test` = 20 passing | ✅ VERIFIED (10/11) | `npm test` |
+| `npm test` = 21 passing | ✅ VERIFIED (10/11) | `npm test` |
 | Contract tests = 8 passing | ✅ VERIFIED (10/11) | `npm run test:contracts` |
 | Demo 1: 50 sock puppets → score stays 0 | ✅ VERIFIED | `npm start` · `test/api.test.mjs` |
 | Demo 2: one settled $1 receipt → score moves + mandate unlocks | ✅ VERIFIED | `npm start` · `test/api.test.mjs` |
@@ -45,14 +45,14 @@ frameworks."*
 | x402 v2 facilitator live on testnet+mainnet | ✅ VERIFIED live (10/2) | `node src/x402 probe`; `https://x402-facilitator.molandak.org/supported` |
 | P256/WebAuthn precompile `0x0100` (EIP-7951) | ✅ VERIFIED (docs + address) | `docs.monad.xyz/developer-essentials/precompiles` |
 | ERC-8004 Identity/Reputation registries deployed | ✅ VERIFIED live on **mainnet** (143) | `getCode` → non-empty on 143; **empty on testnet** |
-| **Hire-then-settle API + UI (mobile-first)** | ✅ VERIFIED (10/11) | `npm run api` → http://127.0.0.1:8130 (402 → sign → settle → score moves) |
-| **Envio indexer of the receipt graph** | ✅ CONFIG BUILT (10/11) — `indexer/` (config + schema + handlers); needs `envio deploy` w/ key to host | `cd indexer && npm i && npm run codegen` |
-| **On-chain Reputation Registry `giveFeedback` write** | ✅ in contract (`MeritReputation.giveFeedback`) | `contracts/test/Merit.t.sol` |
-| **On-chain enriched events (ReceiptRecorded + SybilClusterSuppressed)** | ✅ VERIFIED (10/11) | `testReceiptRecordedEvent_EnrichedForIndexer`, `testSybilClusterSuppressedEvent` |
-| Live ERC-8004 `register()` tx on-chain | ⚠️ NOT YET — needs funded mainnet wallet | run `registerAgent` with a funded key |
-| Live x402 `settle()` tx on-chain | ⚠️ CODE PATH READY — needs `MERIT_EXECUTOR_KEY` + funded testnet wallet | set key, run `npm run api`, POST `/api/settle` |
+| Merchant suite LIVE on Monad testnet | ✅ VERIFIED live (10/11) | `src/monad/merit-contracts.mjs` → `0x92A1…114D`; `cast call … scoreOf(1)` |
+| **Live x402 `recordReceipt` tx on-chain (err===null)** | ✅ VERIFIED live (10/11) | `MERIT_EXECUTOR_KEY=… npm run api` → `POST /api/settle`; tx `0x3dd89821…` status 1 |
+| **Hire-then-settle API + UI (mobile-first)** | ✅ VERIFIED (10/11) | `npm run api` → :8130 (402 → sign → settle → score moves on-chain) |
+| **Envio indexer of the receipt graph** | ✅ CONFIG BUILT (10/11) — `indexer/` targets the live contract; enriched events confirmed emitting | `cd indexer && npm i && npm run codegen` |
+| **On-chain enriched events (`ReceiptRecorded` 8-arg + `SybilClusterSuppressed`)** | ✅ VERIFIED emitting live (10/11) | `cast logs --address 0x92A1…114D` |
+| Live ERC-8004 `register()` on canonical mainnet registry | ⚠️ NOT YET — needs funded mainnet wallet | run `registerAgent` with a funded mainnet key |
 | Real demo video ≤20MB 720p | ❌ NOT STARTED | Phase 5 |
-| Live deploy + keepalive through judging (Nov 3) | ⚠️ deploy target chosen (Render), not yet live | Phase 5 |
+| Live deploy + keepalive through judging (Nov 3) | ⚠️ `render.yaml` added; not yet deployed | Phase 5 |
 
 ---
 

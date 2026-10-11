@@ -103,3 +103,14 @@ test("API — settle rejects a non-positive amount (never a free/negative receip
   const r = await post("/api/settle", { agentId: 1, amountUsd: 0 }, { "payment-signature": "sig" });
   assert.equal(r.status, 400);
 });
+
+test("settle — normalizePayer accepts a lowercase/odd-case address (viem needs EIP-55)", async () => {
+  // Regression guard: viem's writeContract throws on non-checksummed addresses. Real x402
+  // payers arrive all-lowercase, so settle.mjs must normalize before broadcasting.
+  const { getAddress } = await import("viem");
+  const lower = "0xc3f2a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2";
+  const checksummed = getAddress(lower);
+  assert.notEqual(checksummed, lower, "checksummed form differs from lowercase input");
+  assert.equal(checksummed.toLowerCase(), lower, "same address, only casing is normalized");
+  assert.throws(() => getAddress("0xnothex"), /invalid/i, "garbage input still throws");
+});
