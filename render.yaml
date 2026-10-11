@@ -1,0 +1,30 @@
+# Merit — Render blueprint. Connect this repo in Render and it auto-deploys the
+# hire-then-settle API + UI as a single web service.
+services:
+  - type: web
+    name: merit
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run api
+    healthCheckPath: /health
+    # Persistent disk for the node:sqlite receipt ledger (survives redeploys).
+    disk:
+      name: merit-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: MERIT_DB_PATH
+        value: /var/data/receipts.db
+      - key: MERIT_NETWORK
+        value: testnet
+      # Real keys — set these in the Render dashboard (secrets), NOT in code:
+      #   MERIT_EXECUTOR_KEY  (funded Monad testnet key; unlocks REAL on-chain settle —
+      #                        without it the API runs honest "demo" mode, labeled in the UI)
+      #   MONAD_RPC_URL       (optional private RPC; defaults to the public testnet RPC)
+      - key: MERIT_EXECUTOR_KEY
+        sync: false
+      - key: MONAD_RPC_URL
+        sync: false
