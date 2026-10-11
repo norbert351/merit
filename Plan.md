@@ -99,24 +99,29 @@
 - [x] **On-chain anchor + re-derivability** — logic reads SETTLED ledger/graph rows; docs embed the
   re-derivation command.
 - [x] **Cold-start:** reputation is a by-product of a payment (first settlement creates first receipt).
-- [ ] Wire the on-chain Reputation Registry `giveFeedback` write + Envio indexer of the receipt graph.
+- [x] Wire the on-chain Reputation Registry `giveFeedback` write + Envio indexer of the receipt graph.
+  → `MeritReputation.giveFeedback` + enriched `ReceiptRecorded`/`SybilClusterSuppressed` events;
+  `indexer/` (Envio config.yaml + schema.graphql + src/EventHandlers.ts). Remaining: `envio deploy` with a key.
 
 ### Phase 3 — Binding mandate (the consequence) (wk 3–4, Oct 11–13)
 - [x] `src/mandate/mandate.mjs` — authority = f(settled reputation); checked on every spend/action.
 - [x] **Escalation-proof:** requested permission tier is clamped to the earned mandate (direct Bankr
   post-mortem refutation) — tested.
-- [ ] Attach the mandate to a real spend/execution rail (or the demo wallet in the UX).
+- [x] Attach the mandate to a real spend/execution rail (or the demo wallet in the UX).
+  → `POST /api/mandate/enforce` (live verdict) + the "Bound authority" meter + "Try escalate to HIGH"
+  control in the agent detail view.
 
 ### Phase 4 — User-facing hire flow + demo (week 4) ★ the demo that wins the room
-- [ ] **Consumer surface:** "hire a verified agent" — see an agent's earned score + audit trail, pay via x402, receive + rate, score updates.
-- [ ] **Demo 1 (immutable immunity):** 50 sock-puppet agents all praise each other → **score doesn't move** (settled-money + verified-client weighting).
-- [ ] **Demo 2 (the payoff):** one real paying customer settles via x402 → **score moves AND the agent's mandate/authority cap rises.** Deterministic, provable on-chain, no fabrication.
+- [x] **Consumer surface:** "hire a verified agent" — see an agent's earned score + audit trail, pay via x402, receive + rate, score updates.
+  → `src/api/server.mjs` (API) + `public/` (mobile-first SPA): browse, receipt trail, HTTP 402 → sign → settle, mandate meter.
+- [x] **Demo 1 (immutable immunity):** 50 sock-puppet agents all praise each other → **score doesn't move** (settled-money + verified-client weighting).
+- [x] **Demo 2 (the payoff):** one real paying customer settles via x402 → **score moves AND the agent's mandate/authority cap rises.** Deterministic, provable on-chain, no fabrication.
 
 ### Phase 5 — Submission integrity (before Oct 13)
 - [ ] Live Monad testnet/mainnet deployment + every claim grep-able (sponsor tech in code).
-- [ ] `docs/SUBMISSION.md` paste-ready + `docs/rubric.md` judge map + honest ✅/⚠️/❌ verified matrix (no blanket "all good").
+- [x] `docs/SUBMISSION.md` paste-ready + `docs/rubric.md` judge map + honest ✅/⚠️/❌ verified matrix (no blanket "all good").
 - [ ] Real demo video (≤20MB 720p, on-camera settled-receipt action + both demos).
-- [ ] Repo public; no secrets/keys/DBs in git; `.env.example` only.
+- [x] Repo public; no secrets/keys/DBs in git; `.env.example` only.
 - [ ] Keep-alive for live deploy through judging (Gate 7).
 
 ---

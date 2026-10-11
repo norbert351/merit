@@ -40,12 +40,23 @@ receipt graph that anchors every score only exists if writing a receipt is nearl
 - **Demo 2 (the payoff):** one real paying customer settles via x402 → **score moves AND the agent's authority cap unlocks.**
 - Pivot: escalate the attacker to a higher tier → the mandate **still holds** (direct Bankr answer).
 
+Both demos run in three places, all greppable: `npm start` (CLI), `npm run api` + the SPA
+(the hire-then-settle product, HTTP 402 → sign → settle → score moves), and `npm run test:contracts`
+(the same numbers on-chain via `MeritReputation.scoreOf`).
+
+## The product surface
+`npm run api` serves the hire-then-settle app: browse agents sorted by settled credibility, read a
+per-agent **receipt trail**, pay via **HTTP 402 → sign → settle**, watch the score move, and see the
+**bound-authority mandate** clamp an escalation attempt. Mobile-first, honest labeling (demo vs live).
+
 ## Verified vs. not-yet (honest)
-**Verified live (2026-10-02):** 13/13 tests pass; both demos deterministic; x402 v2 facilitator
-reachable on testnet+mainnet; P256 `0x0100` present; ERC-8004 registries deployed on mainnet.
-See `docs/rubric.md` for the full per-claim matrix — including what is *not* yet on-chain
-(live `register()`/`settle()` need a funded wallet + executor key) and what's planned (Envio
-indexer, consumer UI, video). **No blanket "all good."**
+**Verified live (2026-10-11):** 20/20 JS tests pass; 8/8 Foundry contract tests pass; both demos
+deterministic over HTTP; the hire-then-settle API + UI; x402 v2 facilitator reachable on
+testnet+mainnet; P256 `0x0100` present; ERC-8004 registries deployed on mainnet; Envio indexer
+config + enriched on-chain events. See `docs/rubric.md` for the full per-claim matrix — including
+what is *not* yet on-chain (a live `register()`/`settle()` needs a funded wallet + executor key; the
+code path is ready in `src/monad/settle.mjs`) and what's planned (video, hosted indexer, live deploy).
+**No blanket "all good."**
 
 ## Links
 - Code: `github.com/norbert351/merit`

@@ -37,7 +37,20 @@ contract MeritReputation {
     mapping(uint256 => Receipt[]) private _receipts;
     mapping(uint256 => mapping(address => bool)) private _hasPayer;
 
-    event ReceiptRecorded(uint256 indexed agentId, address indexed payer, uint64 amountMicroUsd, bool delivered);
+    // The settled-receipt event the Envio indexer folds into the on-chain re-derivable graph.
+    // It carries EVERY field a stranger needs to recompute scoreOf() from events alone:
+    // amount, verified/delivered flags, deliverable hash, and the post-receipt score.
+    event ReceiptRecorded(
+        uint256 indexed agentId,
+        address indexed payer,
+        uint64 amountMicroUsd,
+        bool verified,
+        bool delivered,
+        bytes32 deliverableHash,
+        uint256 scoreAfter,
+        bool sybilDetected
+    );
+    event SybilClusterSuppressed(uint256 indexed agentId, uint256 clusterSize, uint256 suppressedMicroUsd);
     event FeedbackWritten(uint256 indexed agentId, address indexed client, int128 value, string tag);
 
     constructor(address _identity, address _admin) {
@@ -63,7 +76,22 @@ contract MeritReputation {
     ) external onlyAdmin {
         require(identity.isRegistered(agentId), "MeritReputation: agent not registered");
         _receipts[agentId].push(Receipt(payer, verified, amountMicroUsd, delivered, deliverableHash, uint64(block.timestamp), true));
-        emit ReceiptRecorded(agentId, payer, amountMicroUsd, delivered);
+
+        // Emit the enriched receipt (post-receipt score + sybil flag) so the Envio indexer can
+        // rebuild the whole graph — and a stranger can recompute scoreOf() from events alone.
+        (, , uint256 effSettled, , bool detected) = scoreOf(agentId);
+        emit ReceiptRecorded(agentId, payer, amountMicroUsd, verified, delivered, deliverableHash, effSettled, detected);
+
+        // If this receipt tipped the agent into a detected sybil cluster, record the suppression.
+        (bool syb, uint256 clusterSize) = _detectSybil(agentId);
+        if (syb && detected) {
+            uint256 suppressed;
+            Receipt[] storage rs = _receipts[agentId];
+            for (uint256 i = 0; i < rs.length; i++) {
+                if (!rs[i].verified && rs[i].amountMicroUsd < SYBIL_STAKE_MICRO_USD) suppressed += rs[i].amountMicroUsd;
+            }
+            emit SybilClusterSuppressed(agentId, clusterSize, suppressed);
+        }
     }
 
     /// ERC-8004-style reputation feedback (value in [0,1] scaled). Mirrors giveFeedback shape;

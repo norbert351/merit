@@ -1,0 +1,40 @@
+# Merit settled-receipt graph — the on-chain re-derivability schema (Envio HyperIndex).
+#
+# A stranger can run:
+#   query { agent(id: "1") { scoreUsd settledUsd effectivelySettledUsd distinctVerifiedClients
+#                            sybilDetected receipts { payer verified amountUsd delivered deliverableHash } } }
+# and recompute the score with src/reputation/onchain-score.mjs — no trust in our server.
+
+type Agent {
+  id: ID!                        # agentId
+  scoreUsd: BigInt!              # last-indexed score (microUSD-normalized)
+  settledUsd: BigInt!            # total settled money, pre-suppression
+  effectivelySettledUsd: BigInt! # settled money after sybil-cluster suppression
+  distinctVerifiedClients: BigInt!
+  sybilDetected: Boolean!
+  receipts: [Receipt!]! @derivedFrom(field: "agent")
+  updatedAtBlock: BigInt!
+}
+
+type Receipt {
+  id: ID!                        # txHash-logIndex
+  agent: Agent!
+  payer: String!                 # verified client identity (Monad P256 / WebAuthn 0x0100)
+  verified: Boolean!
+  amountMicroUsd: BigInt!
+  delivered: Boolean!
+  deliverableHash: String!
+  scoreAfter: BigInt!            # the on-chain score recomputed at this receipt
+  blockNumber: BigInt!
+  txHash: String!
+  timestamp: BigInt!
+}
+
+type SybilSuppression {
+  id: ID!
+  agent: Agent!
+  clusterSize: BigInt!
+  suppressedMicroUsd: BigInt!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+}

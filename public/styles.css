@@ -192,4 +192,15 @@ main{min-height:60vh}
   .hero-copy h1{font-size:38px}
   .agent-grid{grid-template-columns:1fr}
   .amt-row input{font-size:22px}
+  /* prevent mobile clipping: cards/rows shrink, long hashes wrap, buttons wrap */
+  .det-cols{grid-template-columns:1fr!important}
+  .det, .det-left, .det-right, .card, .browse, .hero-panel, .hero-copy{min-width:0}
+  .led-row{flex-wrap:wrap;row-gap:2px}
+  .led-row .hash{overflow-wrap:anywhere;word-break:break-all;max-width:100%}
+  .card-body, .card-head h3, .agent-name, .agent-desc{overflow-wrap:anywhere}
+  .btn{white-space:normal;word-break:break-word;text-align:center;height:auto;min-height:44px}
+  .btn.block{width:100%}
+  .mandate-meter .meter-label{flex-wrap:wrap;gap:4px}
+  .card{padding:16px}
+  .det-head{padding:0 4px}
 }

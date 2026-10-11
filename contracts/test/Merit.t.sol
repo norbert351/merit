@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
+import { Vm } from "forge-std/Vm.sol";
 import { MeritIdentity } from "../src/MeritIdentity.sol";
 import { MeritReputation } from "../src/MeritReputation.sol";
 import { MeritMandate } from "../src/MeritMandate.sol";
@@ -98,6 +99,41 @@ contract MeritTest is Test {
         assertTrue(allowed, "$50 spend allowed at HIGH mandate");
         assertEq(uint256(effTier), uint256(MeritMandate.Tier.HIGH), "earned HIGH tier");
         assertEq(maxSpend, 1000 * 1e6, "max spend $1000");
+    }
+
+    /// The Envio indexer folds ReceiptRecorded into the on-chain re-derivable graph, so the
+    /// event MUST carry every field a stranger needs (amount, verified, delivered, hash, scoreAfter).
+    function testReceiptRecordedEvent_EnrichedForIndexer() public {
+        uint256 agentId = _agent(address(0xB0B));
+        address buyer = vm.addr(0xCAFE);
+        bytes32 hash = bytes32(uint256(0xabc));
+        // expect exactly the first ReceiptRecorded: delivered $1 by a verified client, no sybil yet
+        vm.expectEmit(true, true, false, true);
+        emit MeritReputation.ReceiptRecorded(agentId, buyer, 1e6, true, true, hash, 1e6, false);
+        reputation.recordReceipt(agentId, buyer, 1e6, true, true, hash);
+    }
+
+    /// When a dust cluster crosses the sybil threshold, the suppression event fires with the
+    /// suppressed total — this is what proves "fake agents can't buy a score" on-chain.
+    function testSybilClusterSuppressedEvent() public {
+        uint256 agentId = _agent(address(0xB0B));
+        _puppets(agentId, 3); // below threshold: no suppression yet
+        vm.recordLogs();
+        address p4 = vm.addr(1000 + 3);
+        _receipt(agentId, p4, uint64(SYBIL_STAKE), false, true); // 4th dust payer -> crosses threshold
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 sig = keccak256("SybilClusterSuppressed(uint256,uint256,uint256)");
+        bool found;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == sig) {
+                found = true;
+                assertEq(uint256(logs[i].topics[1]), agentId, "suppression bound to the agent");
+                (uint256 clusterSize, uint256 suppressed) = abi.decode(logs[i].data, (uint256, uint256));
+                assertEq(clusterSize, 4, "cluster size 4");
+                assertEq(suppressed, 4 * SYBIL_STAKE, "all dust suppressed");
+            }
+        }
+        assertTrue(found, "SybilClusterSuppressed emitted when cluster crosses threshold");
     }
 
     receive() external payable {}

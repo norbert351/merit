@@ -12,3 +12,9 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/
 contracts/lib/
+# envio generated code + local indexer state (regenerate via `envio codegen`)
+indexer/src/generated/
+indexer/generated/
+indexer/.envio/
+indexer/node_modules/
+indexer/*.env

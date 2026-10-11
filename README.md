@@ -13,26 +13,43 @@
   in `src/monad/config.mjs`)
 - ✅ **Phase 1** — ERC-8004 identity client, x402 facilitator client, paid-MCP gateway (HTTP 402 →
   verify → settle → receipt), `err===null` receipt ledger
-- ✅ **Phase 2** — on-chain re-derivable score (`onchain-score.mjs`)
-- ✅ **Phase 3** — binding, escalation-proof mandate (`mandate.mjs`)
-- ✅ **13/13 tests pass** + full demo launcher (`npm start`)
+- ✅ **Phase 2** — on-chain re-derivable score (`onchain-score.mjs`) **+ Envio indexer** of the receipt graph (`indexer/`)
+- ✅ **Phase 3** — binding, escalation-proof mandate (`mandate.mjs`) + on-chain `MeritReputation.recordReceipt`/`scoreOf`
+- ✅ **Phase 4** — hire-then-settle **API + UI** (`src/api/server.mjs` + `public/`), mobile-first, honest live/demo labeling
+- ✅ **20/20 JS tests pass** + **8/8 contract tests pass** + full demo launcher (`npm start`)
 
-## Run the moat proof
+## Run it
+
 ```bash
-npm test        # 13 tests
-npm start       # the demo launcher: both sock-puppet demos + the escalation-proof mandate
+npm test              # 20 tests (engine + x402 money path + API integration)
+npm run test:contracts # 8 Foundry tests (the on-chain moat proof)
+npm start             # the CLI demo launcher: both sock-puppet demos + the escalation-proof mandate
+npm run api           # API + UI on http://127.0.0.1:8130  (the hire-then-settle app)
+npm run seed          # populate the receipt ledger with the 4 demo agents
 ```
-The two winning demos are real, deterministic tests, ready to become on-chain receipts:
-1. 50 sock-puppet agents praising each other → score **stays 0**.
-2. One real paying customer settles via x402 → score **moves** and the mandate unlocks.
+
+The two winning demos are real and deterministic:
+1. 50 sock-puppet agents praising each other → score **stays 0** (settled-money + verified-client weighting).
+2. One real paying customer settles via x402 (HTTP 402 → sign → settle) → score **moves** and the mandate unlocks.
+
+## The hire-then-settle app
+`npm run api` serves both the JSON API and the SPA (`public/`). Endpoints:
+`GET /api/agents` · `GET /api/agent/:id` · `GET /api/score/:id` · `POST /api/mandate/enforce` · `POST /api/settle`
+(no `PAYMENT-SIGNATURE` → real **HTTP 402** challenge) · `GET /api/meta` · `GET /health`.
+
+**Honesty:** with no funded executor key the API reports `mode:"demo"` and the UI labels every number
+`demo ledger` — it never claims on-chain. Set `MERIT_EXECUTOR_KEY` (funded Monad testnet key, see
+`.env.example`) and `POST /api/settle` broadcasts a **real** `recordReceipt` tx, recording the receipt
+only on `err===null`.
 
 ## Key links
 - `Plan.md` — the master plan (thesis, anti-thesis test, architecture, roadmap, risks, gating)
-- `src/reputation/` — the sybil-resistant scoring engine (the moat)
-- `src/reputation/onchain-score.mjs` — transparent, re-derivable by a stranger
+- `src/reputation/onchain-score.mjs` — the sybil-resistant scoring engine (the moat), re-derivable by a stranger
 - `src/mandate/mandate.mjs` — the binding, escalation-proof authority cap
-- `src/gateway/server.mjs` + `src/x402/facilitator.mjs` — the paid x402 money path
-- `src/receipt/ledger.mjs` — the settled-receipt audit graph (err===null only)
-- `docs/` — rubric/SUBMISSION (afterhours structure, fresh content)
+- `src/api/server.mjs` — the hire-then-settle API (the product surface)
+- `src/monad/settle.mjs` — the real on-chain settlement path (`recordReceipt`, err===null)
+- `indexer/` — Envio HyperIndex: the settled-receipt graph → on-chain re-derivability
+- `contracts/src/MeritReputation.sol` — the on-chain ledger + `scoreOf()` mirroring the JS engine exactly
+- `docs/rubric.md` — the judge-verification map (honest ✅/⚠️/❌ matrix)
 
 > This is a **separate build from AfterHours** (the tokenized-equity gap agent). It shares only the `err===null`-verify + x402 + docs-discipline patterns — not the repo, not the thesis.

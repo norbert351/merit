@@ -1,0 +1,16 @@
+{
+  "name": "merit-receipt-graph",
+  "version": "0.1.0",
+  "description": "Envio HyperIndex — the Merit settled-receipt graph (on-chain re-derivability layer) on Monad.",
+  "type": "module",
+  "scripts": {
+    "codegen": "envio codegen",
+    "dev": "envio dev",
+    "start": "envio start",
+    "deploy": "envio deploy"
+  },
+  "devDependencies": {
+    "envio": "2.10.0"
+  },
+  "engines": { "node": ">=22" }
+}

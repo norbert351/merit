@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "start": "node src/index.mjs"
+    "test:contracts": "cd contracts && forge test",
+    "start": "node src/index.mjs",
+    "api": "node src/api/server.mjs",
+    "ui": "node serve.mjs",
+    "dev": "node src/api/server.mjs"
   },
   "engines": { "node": ">=22" },
   "dependencies": {

@@ -11,8 +11,8 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&
 const fmtUsd = (n) => "$" + Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const short = (s) => s ? String(s).slice(0,6)+"…"+String(s).slice(-4) : "";
 
-const BASE = (new URLSearchParams(location.search).get('base') || '').trim() || '';
-const LIVE = {score:null, mandate:null, receipts:null, ok:false};
+const BASE = (new URLSearchParams(location.search).get('base') || '').trim() || ''; // same-origin by default
+const LIVE = {score:null, mandate:null, receipts:null, ok:false, mode:null};
 const VERIFIED_BONUS = 5, SYBIL_STAKE_USD=0.5, SYBIL_MIN=4;
 const TIERS=["none","low","medium","high"];
 const MANDATE_TABLE=[{min:0,tier:0,max:0},{min:50,tier:1,max:10},{min:500,tier:2,max:100},{min:2500,tier:3,max:1000}];
@@ -54,9 +54,13 @@ let AGENTS = seedAgents();
 let liveAgentMap = {};
 
 async function loadLive(){
-  if(!BASE) return;
+  // Try the API at the resolved base (defaults to same-origin, where src/api/server.mjs serves both
+  // the UI and /api/*). Honest fallback: keep the in-browser demo ledger, labeled.
+  const base = BASE || location.origin;
   try{
-    const r=await fetch(`${BASE}/api/agents`,{signal:AbortSignal.timeout(6000)});
+    const meta = await fetch(`${base}/api/meta`,{signal:AbortSignal.timeout(6000)});
+    if(meta.ok){ const m=await meta.json(); LIVE.mode=m.mode||null; }
+    const r=await fetch(`${base}/api/agents`,{signal:AbortSignal.timeout(6000)});
     if(!r.ok) throw new Error("http "+r.status);
     const data=await r.json();
     if(!data||!data.ok) throw new Error("not ok");
@@ -66,15 +70,22 @@ async function loadLive(){
       const m=(a.mandate&&(a.mandate.tier))??TIERS[mandateFor(score).tier];
       liveAgentMap[a.id || a.agentId]=a;
       const target=AGENTS.find(x=>String(x.id)===String(a.id||a.agentId));
-      if(target){ target.receipts=(a.receipts||a.ledger||target.receipts); target._live=true; }
-      const hero=getHeroEntry(a);
-      if(hero) hero._liveScore=score;
+      if(target){
+        target.receipts=(a.receipts||[]).map(r=>({payer:r.payer,verified:r.verified,amountUsd:r.amountUsd,delivered:r.delivered,hash:r.hash||r.txHash}));
+        target._live=true; target._score=score; target._mandate=a.mandate;
+      }
     });
-  }catch(e){ LIVE.ok=false; /* keep seeded demo, labeled */}
+    updateLiveBadges();
+  }catch(e){ LIVE.ok=false; /* keep seeded demo, labeled */ }
 }
 
-function getHeroEntry(a){ const safe=a.id??a.agentId; if(safe===1||safe===1){// agent 1's live score for the hero label
-    return AGENTS[0]; } return null; }
+function updateLiveBadges(){
+  // Reflect the REAL mode in the chrome: live on-chain vs honest demo. Never claim on-chain in demo.
+  const lp=document.querySelector(".live-pill"); const pl=document.querySelector(".panel-label");
+  if(LIVE.ok && LIVE.mode==="live"){ if(lp) lp.innerHTML='<span class="pulse-dot"></span> live · on-chain'; }
+  else if(LIVE.ok){ if(lp) lp.innerHTML='<span class="pulse-dot"></span> demo ledger'; if(pl) pl.textContent="REPUTATION LEDGER · demo (no executor key)"; }
+  else { if(lp) lp.innerHTML='<span class="pulse-dot"></span> in-browser demo'; if(pl) pl.textContent="REPUTATION LEDGER · in-browser demo"; }
+}
 
 async function init(){
   await loadLive();
@@ -90,6 +101,7 @@ function route(){
   if(h.startsWith("#/how")){ app.innerHTML=$("#t-how").innerHTML; wireHow(app); }
   else if(h.startsWith("#/agent")){ renderDetail(app, h.split("/")[2]); }
   else { app.innerHTML=$("#t-browse").innerHTML; renderBrowse(app); }
+  updateLiveBadges(); // re-apply the honest live/demo badge AFTER the template renders
   updateNav();
   window.scrollTo(0,0);
 }
@@ -118,14 +130,15 @@ function afterPaintAnimate(cont){ cont.querySelectorAll(".ring .fg").forEach(c=>
 function agentCard(a){
   const s=scoreAgent(a.receipts);
   const tier=s.sybil.detected?"sybil":(s.score>0?"safe":"safe");
-  const label=s.sybil.detected?`${s.sybil.clusterSize} unverified dust payers suppressed (score ${s.score})`:(a._live?"live on-chain":AGENTS.length?s.score>0?`${s.distinctVerifiedClients} verified buyer${s.distinctVerifiedClients===1?"":"s"} · ${fmtUsd(s.effectivelySettledUsd)} settled`:"0 settled calls — score 0": "0 settled");
+  const liveTag = a._live ? (LIVE.mode==="live" ? "live · on-chain" : "live · demo ledger") : "";
+  const label=s.sybil.detected?`${s.sybil.clusterSize} unverified dust payers suppressed (score ${s.score})`:(a._live?liveTag:AGENTS.length?s.score>0?`${s.distinctVerifiedClients} verified buyer${s.distinctVerifiedClients===1?"":"s"} · ${fmtUsd(s.effectivelySettledUsd)} settled`:"0 settled calls — score 0": "0 settled");
   const card=document.createElement("a");
   card.className="agent-card"; card.href=`#/agent/${a.id}`;
   card.innerHTML=`
     <div class="agent-top">
       <div class="agent-avatar">${esc(a.name[0])}</div>
       <div><div class="agent-name">${esc(a.name)}</div>
-        <div class="agent-meta"><span class="chip safe">${esc(a.area)}</span>${a._live?'<span class="chip v">live</span>':''}</div>
+        <div class="agent-meta"><span class="chip safe">${esc(a.area)}</span>${a._live?`<span class="chip v">${LIVE.mode==="live"?"live":"demo"}</span>`:''}</div>
       </div>
     </div>
     <div class="agent-band ${tier}"><svg><use href="#i-shield"/></svg><span>${esc(label)}</span></div>
@@ -160,6 +173,9 @@ function renderHeroLedger(app){
 
 /* DOM helpers */
 function el(tag,attrs,...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs||{})){if(k==="class")e.className=v;else e.setAttribute(k,v);}kids.filter(Boolean).forEach(k=>e.appendChild(typeof k==="string"?document.createTextNode(k):k));return e;}
+// Like el() but allows a trusted inline-HTML string (chips) as a child — used for the detail header.
+function elh(tag,attrs,...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs||{})){if(k==="class")e.className=v;else e.setAttribute(k,v);}kids.filter(Boolean).forEach(k=>{if(k&&k.__html!=null){const t=document.createElement("template");t.innerHTML=k.__html;e.appendChild(t.content.firstChild);}else e.appendChild(typeof k==="string"?document.createTextNode(k):k);});return e;}
+const html=(s)=>({__html:s});
 
 /* ---- detail ---- */
 function renderDetail(app,id){
@@ -169,14 +185,14 @@ function renderDetail(app,id){
   $("#detHead",app).appendChild(el("div",{class:"det-head"},
     el("div",{class:"agent-avatar"},esc(a.name[0])),
     el("div",null,
-      el("div",{class:"agent-name"},esc(a.name)+(a._live?" <span class='chip v'>live</span>":"")),
+      elh("div",{class:"agent-name"},esc(a.name),(a._live?html(`<span class='chip v'>${LIVE.mode==="live"?"live":"demo"}</span>`):"")),
       el("div",{class:"agent-meta"},
         el("span",{class:"chip safe"},esc(a.area)),
         el("span",{class:"chip v"},"score "+s.score+" · "+fmtUsd(s.effectivelySettledUsd)+" settled")
       )
     )
   ));
-  $("#recHint",app).textContent = a._live? "live on-chain ledger":"in-browser demo ledger (honest)";
+  $("#recHint",app).textContent = a._live ? (LIVE.mode==="live" ? "live on-chain ledger" : "live ledger (demo mode — no executor key)") : "in-browser demo ledger (honest)";
   renderLedger($("#detLedger",app), a.receipts, LIVE.ok && a._live);
   // clip the long receipt trail to an internal scroll so a 50-row ledger doesn't run the page
   const dl=$("#detLedger",app); if(dl && dl.children.length>8){ dl.classList.add("ledger-slice"); }
@@ -239,14 +255,28 @@ function doSettle(app,a,s){
   // ONLY as an in-browser demo when no backend is attached, else call the real settle endpoint.
   setTimeout(async ()=>{
     try{
-      const demo=!LIVE.ok;
-      if(!demo && BASE){
-        const r=await fetch(`${BASE}/api/settle`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({agentId:a.id,payer:"0xbuyer",amountUsd:amt,signature:"demo"})});
-        if(r.ok){ const j=await r.json(); a.receipts.push({payer:"0xbuyer",verified:true,amountUsd:amt,delivered:true,hash:j.txHash||"on-chain"}); flash(st,"ok",`Settled on-chain: ${j.txHash||"receipt minted"} · score updated.`); }
-        else flash(st,"err","Backend settle failed.");
+      const base = BASE || location.origin;
+      if(LIVE.ok){
+        // Real path: POST /api/settle. No PAYMENT-SIGNATURE -> the server returns HTTP 402
+        // (the real x402 challenge); we then replay with a signature to settle + mint the receipt.
+        const challenge = await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({agentId:a.id,amountUsd:amt})});
+        if(challenge.status===402){
+          flash(st,"err","HTTP 402 — x402 challenge issued; signing payment…");
+          const r=await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json","payment-signature":"demo-sig"},body:JSON.stringify({agentId:a.id,payer:"0xbuyer",amountUsd:amt})});
+          const j=await r.json();
+          if(j.ok){
+            a.receipts.push({payer:j.payer||"0xbuyer",verified:true,amountUsd:amt,delivered:true,hash:j.txHash||"receipt"});
+            const live = j.mode==="live" ? `Settled on-chain: ${j.txHash}` : `Settled (demo ledger): ${j.txHash}`;
+            flash(st,"ok",`${live} · score ${s.score} → ${j.newScore}`);
+            LIVE.mode=j.mode;
+          } else flash(st,"err","Settle failed: "+(j.error||"unknown"));
+        } else {
+          const j=await challenge.json().catch(()=>({}));
+          flash(st,"err","Unexpected response: "+(j.error||challenge.status));
+        }
       } else {
         a.receipts.push({payer:"0xbuyer",verified:true,amountUsd:amt,delivered:true,hash:"demo-receipt"});
-        flash(st,"ok",`(demo) x402 settled ${fmtUsd(amt)} → receipt stamped on ledger. Score: ${s.score} → ${scoreAgent(a.receipts).score}. Wire a live backend to settle on-chain.`);
+        flash(st,"ok",`(in-browser demo) x402 settled ${fmtUsd(amt)} → receipt stamped on ledger. Score: ${s.score} → ${scoreAgent(a.receipts).score}. Start the API (npm run api) to settle live.`);
       }
       renderLedger($("#detLedger",app), a.receipts, LIVE.ok);
       renderMandate($("#mandateMeter",app), scoreAgent(a.receipts).score);
