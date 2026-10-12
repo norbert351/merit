@@ -31,7 +31,7 @@ const regCh = await postJson("/api/passkey/challenge", { clientId });
 const regSig = await pk.sign(regCh.json.message);
 const reg = await postJson("/api/passkey/register", { clientId, pubX: pk.pubX, pubY: pk.pubY, challengeId: regCh.json.challengeId, passkey: regSig });
 line(`1. register passkey       -> ${reg.status}  clientId=${clientId}  identity=${reg.json?.client?.address}`);
-if (!reg.ok) { line("❌ registration failed: " + reg.json?.error); process.exit(1); }
+if (reg.json?.ok !== true) { line("❌ registration failed: " + (reg.json?.error || reg.json?.reason)); process.exit(1); }
 
 // 2) request a server-issued payment challenge
 const c = await postJson("/api/settle", { agentId: AGENT, amountUsd: AMOUNT, clientId });
