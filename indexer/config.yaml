@@ -4,10 +4,12 @@
 # MeritReputation contract is indexed into a queryable graph, so ANY stranger can recompute
 # an agent's Merit score from on-chain data alone (no trust in our server).
 #
-#   npx envio dev      # local, against the deployed MeritReputation on Monad testnet
-#   npx envio deploy   # Envio Cloud hosting (the $5K bounty target)
-#
-# Docs: https://docs.envio.dev
+#   npx envio dev      # local indexing against the deployed MeritReputation on Monad testnet
+#                      # (needs ENVIO_API_TOKEN in indexer/.env — HyperSync access)
+# Hosted deploy = Envio Cloud (GitHub App) or the envio-cloud CLI — NOT `envio deploy`:
+#   dashboard: https://envio.dev/app  (install "Envio Deployments GitHub App" → connect repo)
+#   CLI:       npm i -g envio-cloud && envio-cloud login && envio-cloud deploy
+# Docs: https://docs.envio.dev/docs/HyperIndex/hosted-service
 name: merit-receipt-graph
 description: Merit — sybil-resistant, settled-money-weighted agent reputation (Monad Metropolis Track 04)
 
