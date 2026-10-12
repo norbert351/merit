@@ -12,8 +12,8 @@ in code. Re-verify each line before submission (Phases may have advanced since t
 **Run it yourself:**
 ```bash
 cd merit
-npm test              # 27 tests (engine + money path + API + live P256-precompile verify)
-npm run test:contracts # 8 Foundry tests (on-chain moat proof)
+npm test              # 34 tests (engine + money path + API + live P256 + payment fail-closed + parity)
+npm run test:contracts # 17 Foundry tests (Merit moat + GuardedWallet mandate enforcement)
 npm start             # demo launcher: both sock-puppet demos + escalation-proof mandate
 npm run api           # the hire-then-settle app (API + UI) on :8130
 ```
@@ -34,11 +34,16 @@ frameworks."*
 
 | Claim | Status | How to verify |
 |---|---|---|
-| `npm test` = 27 passing | ✅ VERIFIED (10/12) | `npm test` |
-| Contract tests = 8 passing | ✅ VERIFIED (10/11) | `npm run test:contracts` |
+| `npm test` = 34 passing | ✅ VERIFIED (10/12) | `npm test` |
+| Contract tests = 17 passing (8 Merit + 9 GuardedWallet) | ✅ VERIFIED | `cd contracts && forge test` |
 | Demo 1: 50 sock puppets → score stays 0 | ✅ VERIFIED | `npm start` · `test/api.test.mjs` |
 | Demo 2: one settled $1 receipt moves score + mandate | ✅ VERIFIED | `npm start` · `test/api.test.mjs` |
-| **Verified client = P-256 passkey, not a self-declared flag** | ✅ VERIFIED live (10/12) | `node scripts/settle-demo.mjs` · `test/passkey.test.mjs` — a registered passkey settles `verified:true` (precompile `0x0100` returns `0x..01`); a missing/forged signature settles `verified:false` |
+| **Verified client = P-256 passkey, not a self-declared flag** | ✅ VERIFIED live (10/12) | `node scripts/settle-demo.mjs` · `test/passkey.test.mjs` |
+| **Passkey key cannot be replaced by knowing a clientId; registration requires proof-of-possession** | ✅ VERIFIED | `test/passkey.test.mjs` |
+| **Challenges are server-issued, expiring, single-use, restart-safe (no in-memory replay set)** | ✅ VERIFIED | `test/passkey.test.mjs` · `test/api.test.mjs` |
+| **Payment verification fails CLOSED; duplicate paymentId cannot double-credit** | ✅ VERIFIED | `test/security.test.mjs` · `test/api.test.mjs` |
+| **Guarded wallet ENFORCES the mandate at execution (over-cap transfer reverts on-chain)** | ✅ VERIFIED live on Monad testnet (10/12) — `GuardedWallet` `0x3570…a1Cd` | `docs/DEPLOYMENT_MONAD_TESTNET.md` · `contracts/test/GuardedWallet.t.sol` |
+| **Seeded/demo receipts cannot feed the trusted score** | ✅ VERIFIED | `test/security.test.mjs` |
 | Escalation-proof mandate (Bankr refutation) | ✅ VERIFIED | `npm start` (DEMO 3) · `POST /api/mandate/enforce` |
 | Receipt ledger writes only on `err===null` | ✅ VERIFIED | `test/phase1.test.mjs` |
 | PaidGateway returns HTTP 402 (x402 v2 challenge) | ✅ VERIFIED (unit) | `test/phase1.test.mjs` + `src/gateway/server.mjs` |
@@ -89,7 +94,10 @@ frameworks."*
 - [x] `docs/TECHNICAL.md` (stack, algorithm, data model, contract addresses, API, reproduce) — written 2026-10-12
 - [x] `docs/ROADMAP.md` (demo → product, honest not-yet list) — written 2026-10-12
 - [x] `docs/SUBMISSION.md` paste-ready + honest ✅/⚠️/❌ matrix
-- [x] Envio indexer config + on-chain enriched events
+- [x] **Security pass** — `docs/SECURITY_AUDIT.md`, `docs/THREAT_MODEL.md`, `docs/TESTING.md`, `docs/INTEGRATIONS.md`, `docs/REMEDIATION_REPORT.md` (written 2026-10-12)
+- [x] **Execution-boundary mandate** — `contracts/src/GuardedWallet.sol` deployed + proven live (`0x3570…a1Cd`): under-cap transfer moved funds, over-cap **reverted**
+- [x] **Hardened identity + payments** — PoP registration, immutable key binding, single-use expiring challenges, fail-closed payment verification + `paymentId` idempotency
+- [x] Envio indexer config + on-chain enriched events (handlers corrected: canonical-score reconstruction)
 - [x] **Live Monad x402 `recordReceipt` on-chain** (tx `0x3dd89821…`, status 1) — written to the live contract
 - [ ] Live Monad **deploy URL** (the always-on demo — `render.yaml` ready; needs the Render dashboard or a DNS record)
 - [ ] On-chain ERC-8004 `register()` (mainnet) for the demo agent

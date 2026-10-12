@@ -34,7 +34,10 @@ receipt graph that anchors every score only exists if writing a receipt is nearl
 4. **Verified client** — to be counted as a *distinct verified client* (worth a score floor + the anti-sybil weight), the buyer registers a **P-256 passkey** and signs the exact payment challenge; the server verifies the assertion with **Monad's P256 precompile (EIP-7951, `0x0100`)**. No registered key or a forged signature → the receipt still settles, but as **unverified** — it can never move the verified-client floor.
 5. **Receipt** — on **`err===null`** (transaction confirmed, never broadcast), a receipt `{agentId, verifiedPayer, amount, deliverableHash, outcome}` is written to the graph. A receipt exists **IFF money actually settled.**
 6. **Score** — reputation = settled money + distinct **passkey-verified** client floor, with sybil clusters zeroed. Transparent and **re-derivable by a stranger** from the on-chain receipt graph.
-7. **Mandate** — the agent's authority = f(earned score), checked on **every** spend/action and **escalation-proof**: a higher permission tier still can't exceed the earned mandate.
+7. **Mandate (enforced)** — the agent's authority = f(earned score), checked on **every** spend and
+   **escalation-proof**: a higher permission tier still can't exceed the earned mandate. This is
+   **enforced at the execution boundary** by `GuardedWallet` — a transfer over the earned cap
+   **reverts on-chain** (proven live on testnet), not merely an advisory `allowed` verdict.
 
 ## The two demos that win the room
 - **Demo 1 (immutable immunity):** 50 sock-puppet wallets each *claim* to be verified → the P256 gate refuses every forged/missing passkey → **score stays 0.**
@@ -51,17 +54,19 @@ per-agent **receipt trail**, pay via **HTTP 402 → sign → settle**, watch the
 **bound-authority mandate** clamp an escalation attempt. Mobile-first, honest labeling (demo vs live).
 
 ## Verified vs. not-yet (honest)
-**Verified live (2026-10-12):** 27/27 JS tests pass — including the **live P256-precompile** verify
+**Verified live (2026-10-12):** 34/34 JS tests pass — including the **live P256-precompile** verify
 (a registered passkey over the challenge → `verified:true` at `0x0100`; a forged/missing one →
-`verified:false`); 8/8 Foundry contract tests pass; the merchant contract suite is **deployed and
-live on Monad testnet** (`MeritReputation` `0x92A1…114D`) and a real x402 `recordReceipt` tx settled
-on-chain (tx `0x3dd89821…`, status 1) — moving agent #1's score on-chain; the hire-then-settle API +
-UI drives the **passkey verified-client** rail end to end (`node scripts/settle-demo.mjs`); both demos
-deterministic over HTTP; x402 v2 facilitator reachable on testnet+mainnet; P256 `0x0100` live; ERC-8004
-registries deployed on mainnet; Envio indexer config + enriched on-chain events confirmed emitting.
-See `docs/rubric.md` for the full per-claim matrix — including what is *not* yet on-chain (registering
-against the **canonical mainnet** ERC-8004 registry needs a funded mainnet wallet) and what's planned
-(video, hosted indexer, live deploy). **No blanket "all good."**
+`verified:false`), **proof-of-possession registration + immutable key binding**, **single-use expiring
+challenges**, **fail-closed payment verification** + `paymentId` idempotency, score parity, and
+**demo-data isolation**; 17/17 Foundry contract tests pass (8 Merit + 9 GuardedWallet) and the
+**GuardedWallet is deployed + proven live on Monad testnet** (`0x3570…a1Cd`) — an under-cap transfer
+moved funds on-chain while an over-cap transfer **reverted**; the merchant suite is live at
+`0x92A1…114D` with a real x402 `recordReceipt` tx settled on-chain; the hire-then-settle API + UI
+drives the **passkey verified-client** rail end to end (`node scripts/settle-demo.mjs`); x402 v2
+facilitator reachable on testnet+mainnet; ERC-8004 registries deployed on mainnet; Envio indexer
+config + enriched on-chain events emitting. See `docs/rubric.md` and `docs/SECURITY_AUDIT.md` for the
+full per-claim matrix — including what is *not* yet done (canonical **mainnet** ERC-8004 registration;
+hosted Envio deploy; public deploy URL — all documented). **No blanket "all good."**
 
 ## Links
 - Code: `github.com/norbert351/merit`

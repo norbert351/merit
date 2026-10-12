@@ -12,7 +12,7 @@
 
 import { createServer } from "node:http";
 import { FacilitatorClient } from "../x402/facilitator.mjs";
-import { writeReceipt, reconcileReceipt } from "../receipt/ledger.mjs";
+import { writeReceipt, reconcileReceipt, receiptExistsForPayment } from "../receipt/ledger.mjs";
 import { publicClient } from "../monad/erc8004.mjs";
 import { MONAD, X402_FACILITATOR_URL } from "../monad/config.mjs";
 import { verifyClientAssertion, passkeyAddress } from "../identity/passkey.mjs";
@@ -69,24 +69,27 @@ class PaidGateway {
    * Settle a verified payment and write the receipt ONLY on err===null.
    * @returns {Promise<{status:'settled'|'verification_only'|'reverted', txHash?, receiptId?}>}
    */
-  async settleAndRecord({ payload, signature, payer, amountUsd, deliverableHash, clientId, nonce, passkey }) {
+  async settleAndRecord({ payload, signature, payer, amountUsd, deliverableHash, clientId, challengeId, passkey, paymentId }) {
     // 1) verify first (anti-fraud: a bogus signature never settles)
     const v = await this.verifyPayment({ payload, signature });
     if (!v || v.isValid === false) {
       return { status: "rejected", reason: "PAYMENT-SIGNATURE not verified by facilitator" };
     }
 
-    // 1b) VERIFIED-CLIENT GATE: a payer only earns the verified-client floor by proving a
-    //     P-256 passkey assertion (verified by Monad's precompile). Absent/forged => unverified.
+    // 1b) VERIFIED-CLIENT GATE: proof is a P-256 passkey assertion over a server challenge,
+    //     checked by Monad's precompile. Absent/forged/replayed => unverified.
     let verified = false, verifyMethod = null;
     let payerId = payer;
     if (clientId && passkey?.r && passkey?.s) {
       const vr = await verifyClientAssertion({
-        clientId, agentId: this.agentId, amountMicroUsd: Math.round((amountUsd || 0) * 1e6),
-        nonce: nonce ?? "", r: passkey.r, s: passkey.s, network: NETWORK,
+        challengeId, clientId, r: passkey.r, s: passkey.s, network: NETWORK,
       });
       verified = vr.verified; verifyMethod = vr.method;
       if (verified && vr.pubkey) payerId = passkeyAddress(vr.pubkey);
+    }
+    // idempotency: one trusted receipt per payment
+    if (paymentId && (await receiptExistsForPayment(paymentId))) {
+      return { status: "refused", reason: "duplicate paymentId (replay blocked)", verified };
     }
 
     // 2) settlement path
@@ -110,14 +113,15 @@ class PaidGateway {
         outcome: onChainOk ? "delivered" : null,
         txHash,
         chainId: this.chainId,
-        status: onChainOk ? "settled" : "reverted",
+        status: onChainOk ? "settled" : "refused",
         verifyMethod,
+        paymentId: paymentId ?? null,
+        source: "live",
       });
-      return { status: onChainOk ? "settled" : "reverted", txHash, receiptId, onChainOk, verified };
+      return { status: onChainOk ? "settled" : "refused", txHash, receiptId, onChainOk, verified };
     }
 
-    // 3) verification-only mode: challenge is issued; settlement recorded by an external
-    //    settle hook (facilitator). Still record a PENDING receipt so reconcile can settle it.
+    // 3) verification-only mode (no executor): record a clearly-labelled demo/pending receipt.
     const receiptId = await writeReceipt({
       agentId: this.agentId,
       payer: payerId,
@@ -127,10 +131,12 @@ class PaidGateway {
       outcome: null,
       txHash: null,
       chainId: this.chainId,
-      status: "pending",
+      status: "refused", // no executor => nothing is trusted as settled here
       verifyMethod,
+      paymentId: paymentId ?? null,
+      source: "demo",
     });
-    return { status: "verification_only", receiptId, verified, note: "no executor key; pending reconciled by settle hook" };
+    return { status: "verification_only", receiptId, verified, note: "no executor key; not broadcast" };
   }
 
   handle(req, res) {
@@ -155,7 +161,8 @@ class PaidGateway {
             amountUsd: parsed.amountUsd || 0,
             deliverableHash: parsed.deliverableHash || null,
             clientId: parsed.clientId || null,
-            nonce: parsed.nonce ?? "",
+            challengeId: parsed.challengeId || null,
+            paymentId: parsed.paymentId || null,
             passkey: parsed.passkey || null,
           });
           return this._json(res, 200, r);

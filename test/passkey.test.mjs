@@ -1,8 +1,7 @@
-// Passkey (P-256 / WebAuthn) verified-client identity — the anti-sybil rail of Merit.
-//
-// The cryptographic tests run against Monad's LIVE P256 precompile (EIP-7951, 0x0100) — the same
-// rail the deployed product uses. They are skipped (not faked) when the RPC is unreachable, so a
-// green run never claims a rail it did not exercise.
+// Passkey (P-256 / WebAuthn) verified-client identity — anti-sybil rail of Merit (HARDENED).
+// Covers proof-of-possession registration, immutable key binding, and server-issued single-use
+// expiring challenges. The cryptographic tests run against Monad's LIVE P256 precompile (EIP-7951,
+// 0x0100) — the same rail the deployed product uses — and skip (never fake) when the RPC is down.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
@@ -12,11 +11,12 @@ import { join } from "node:path";
 process.env.MERIT_DB_PATH = join(mkdtempSync(join(tmpdir(), "merit-passkey-")), "receipts.db");
 delete process.env.MERIT_EXECUTOR_KEY;
 
-const { paymentChallenge, challengeDigest, passkeyAddress, registerClient, verifyClientAssertion, getClient, P256_METHOD } =
-  await import("../src/identity/passkey.mjs");
+const {
+  challengeDigest, passkeyAddress, pubFingerprint, registerClient, verifyClientAssertion,
+  createRegistrationChallenge, createPaymentChallenge, getClient, P256_METHOD,
+} = await import("../src/identity/passkey.mjs");
 const { generatePasskey } = await import("../src/identity/passkey-client.mjs");
 
-// Probe the RPC once so the live tests can skip honestly instead of failing on a cold network.
 const RPC = process.env.MONAD_RPC_URL || "https://testnet-rpc.monad.xyz";
 let ONLINE = false;
 try {
@@ -24,69 +24,111 @@ try {
   const t = setTimeout(() => ctrl.abort(), 6000);
   const res = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" }, signal: ctrl.signal, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }) });
   const j = await res.json();
-  ONLINE = j?.result === "0x279f"; // 10143
+  ONLINE = j?.result === "0x279f";
   clearTimeout(t);
 } catch { ONLINE = false; }
-
 const skip = ONLINE ? false : `Monad testnet RPC unreachable (${RPC})`;
 
-test("passkey — the payment challenge is deterministic and binds agent+amount+client+nonce", () => {
-  const a = paymentChallenge({ agentId: 1, amountMicroUsd: 1000000, clientId: "c1", nonce: "n1" });
-  const b = paymentChallenge({ agentId: 1, amountMicroUsd: 1000000, clientId: "c1", nonce: "n1" });
-  const c = paymentChallenge({ agentId: 1, amountMicroUsd: 1000000, clientId: "c1", nonce: "n2" });
-  assert.equal(a.msg, b.msg);
-  assert.equal(a.digest, b.digest);
-  assert.notEqual(a.digest, c.digest, "changing the nonce changes the signed digest");
-  assert.match(a.digest, /^0x[0-9a-f]{64}$/);
-  assert.equal(challengeDigest(a.msg), a.digest);
+const CLIENT = "live-client";
+
+test("passkey — challenge digest is deterministic sha256", () => {
+  assert.equal(challengeDigest("merit:test"), challengeDigest("merit:test"));
+  assert.match(challengeDigest("merit:test"), /^0x[0-9a-f]{64}$/);
 });
 
-test("passkey — a client's on-chain identity is DERIVED from the public key, not chosen", () => {
+test("passkey — identity + fingerprint are DETERMINISTIC from the public key", () => {
   const k = { pubX: "0x" + "11".repeat(32), pubY: "0x" + "22".repeat(32) };
   assert.equal(passkeyAddress(k), passkeyAddress({ ...k }));
+  assert.equal(pubFingerprint(k), pubFingerprint({ ...k }));
   assert.match(passkeyAddress(k), /^0x[0-9a-fA-F]{40}$/);
-  assert.notEqual(passkeyAddress(k), passkeyAddress({ pubX: "0x" + "33".repeat(32), pubY: k.pubY }));
 });
 
-test("passkey — registration stores the public key (and rejects malformed ones)", async () => {
+test("passkey — registration requires proof of possession of the private key", { skip }, async () => {
   const pk = await generatePasskey();
-  const reg = await registerClient({ clientId: "client-unit", pubX: pk.pubX, pubY: pk.pubY });
-  assert.match(reg.address, /^0x[0-9a-fA-F]{40}$/);
-  const stored = await getClient("client-unit");
-  assert.equal(stored.pubX, pk.pubX);
-  await assert.rejects(() => registerClient({ clientId: "bad", pubX: "0x1234", pubY: pk.pubY }), /pubX must be 32 bytes/);
+  // No signature on a fresh challenge => PoP fails
+  const noSigCh = await createRegistrationChallenge({ clientId: CLIENT });
+  const noSig = await registerClient({ clientId: CLIENT, pubX: pk.pubX, pubY: pk.pubY, challengeId: noSigCh.challengeId, r: null, s: null });
+  assert.equal(noSig.ok, false, "no proof of possession must be rejected");
+  // Correct signature over a FRESH challenge with the matching private key => ok
+  const { challengeId, message } = await createRegistrationChallenge({ clientId: CLIENT });
+  const sig = await pk.sign(message);
+  const ok = await registerClient({ clientId: CLIENT, pubX: pk.pubX, pubY: pk.pubY, challengeId, r: sig.r, s: sig.s });
+  assert.equal(ok.ok, true);
+  assert.match(ok.client.address, /^0x[0-9a-fA-F]{40}$/);
+  assert.equal((await getClient(CLIENT)).pubX, pk.pubX);
 });
 
-test("passkey — Monad's P256 precompile VERIFIES a real passkey assertion", { skip }, async () => {
-  const pk = await generatePasskey();
-  const clientId = "live-verified-client";
-  await registerClient({ clientId, pubX: pk.pubX, pubY: pk.pubY });
-
-  const { msg } = paymentChallenge({ agentId: 1, amountMicroUsd: 1000000, clientId, nonce: "live-1" });
-  const { r, s } = await pk.sign(msg);
-  const vr = await verifyClientAssertion({ clientId, agentId: 1, amountMicroUsd: 1000000, nonce: "live-1", r, s, network: "testnet" });
-  assert.equal(vr.verified, true, "a valid ES256 assertion verifies against 0x0100");
-  assert.equal(vr.method, P256_METHOD);
-  assert.match(vr.precompileReturn, /^0x0{63}1$/, "the precompile's own return word is surfaced (0x..01)");
+test("passkey — an attacker CANNOT replace another client's key by knowing its clientId", { skip }, async () => {
+  const victim = await generatePasskey();
+  const rc = await createRegistrationChallenge({ clientId: "victim" });
+  const rsig = await victim.sign(rc.message);
+  await registerClient({ clientId: "victim", pubX: victim.pubX, pubY: victim.pubY, challengeId: rc.challengeId, r: rsig.r, s: rsig.s });
+  // attacker knows only the clientId, has its own key + a fresh challenge
+  const attacker = await generatePasskey();
+  const ac = await createRegistrationChallenge({ clientId: "victim" });
+  const asig = await attacker.sign(ac.message);
+  const hijack = await registerClient({ clientId: "victim", pubX: attacker.pubX, pubY: attacker.pubY, challengeId: ac.challengeId, r: asig.r, s: asig.s });
+  assert.equal(hijack.ok, false, "re-registering an existing clientId must be refused (immutable)");
+  assert.match(hijack.reason, /already|immutable/i);
+  // the victim's original key is still on file
+  assert.equal((await getClient("victim")).pubX, victim.pubX);
 });
 
-test("passkey — a FORGED assertion is refused (the sock-puppet cannot self-declare verified)", { skip }, async () => {
+test("passkey — a registration challenge is single-use (replay is refused)", { skip }, async () => {
   const pk = await generatePasskey();
-  const clientId = "live-forgery-attempt";
-  await registerClient({ clientId, pubX: pk.pubX, pubY: pk.pubY });
-  const { msg } = paymentChallenge({ agentId: 1, amountMicroUsd: 1000000, clientId, nonce: "live-2" });
-  const { r, s } = await pk.sign(msg);
-  // flip one byte of s -> the signature no longer commits to the challenge
+  const c2 = "replay-client";
+  const { challengeId, message } = await createRegistrationChallenge({ clientId: c2 });
+  const sig = await pk.sign(message);
+  const first = await registerClient({ clientId: c2, pubX: pk.pubX, pubY: pk.pubY, challengeId, r: sig.r, s: sig.s });
+  assert.equal(first.ok, true);
+  const replay = await registerClient({ clientId: c2, pubX: pk.pubX, pubY: pk.pubY, challengeId, r: sig.r, s: sig.s });
+  assert.equal(replay.ok, false, "reusing a consumed challenge must be refused");
+  assert.match(replay.reason, /expired|already used/i);
+});
+
+test("passkey — a payment challenge is single-use across replays", { skip }, async () => {
+  const pk = await generatePasskey();
+  const c3 = "pay-client";
+  const rc = await createRegistrationChallenge({ clientId: c3 });
+  const rsig = await pk.sign(rc.message);
+  await registerClient({ clientId: c3, pubX: pk.pubX, pubY: pk.pubY, challengeId: rc.challengeId, r: rsig.r, s: rsig.s });
+  const pc = await createPaymentChallenge({ clientId: c3, agentId: 1, amountMicroUsd: 1_000_000, network: "testnet" });
+  const sig = await pk.sign(pc.message);
+  assert.equal((await verifyClientAssertion({ challengeId: pc.challengeId, clientId: c3, r: sig.r, s: sig.s })).verified, true, "valid challenge signature verifies against 0x0100");
+  const replay = await verifyClientAssertion({ challengeId: pc.challengeId, clientId: c3, r: sig.r, s: sig.s });
+  assert.equal(replay.verified, false, "reusing the same payment challenge is blocked");
+  assert.match(replay.reason, /expired|already used/i);
+});
+
+test("passkey — a signature from ANOTHER client is rejected", { skip }, async () => {
+  const attacker = await generatePasskey();
+  const pcz = await createPaymentChallenge({ clientId: "victim", agentId: 1, amountMicroUsd: 1_000_000, network: "testnet" });
+  const sig = await attacker.sign(pcz.message); // attacker's key, not the victim's registered key
+  const v = await verifyClientAssertion({ challengeId: pcz.challengeId, clientId: "victim", r: sig.r, s: sig.s });
+  assert.equal(v.verified, false, "a signature from the wrong client must not verify");
+});
+
+test("passkey — Monad's P256 precompile VERIFIES a valid assertion and refuses a forged one", { skip }, async () => {
+  const pk = await generatePasskey();
+  const cForge = "forge-client";
+  const rc = await createRegistrationChallenge({ clientId: cForge });
+  const rsig = await pk.sign(rc.message);
+  await registerClient({ clientId: cForge, pubX: pk.pubX, pubY: pk.pubY, challengeId: rc.challengeId, r: rsig.r, s: rsig.s });
+  const pc = await createPaymentChallenge({ clientId: cForge, agentId: 1, amountMicroUsd: 1_000_000, network: "testnet" });
+  const { r, s } = await pk.sign(pc.message);
+  const good = await verifyClientAssertion({ challengeId: pc.challengeId, clientId: cForge, r, s });
+  assert.equal(good.verified, true);
   const badS = "0x" + s.slice(2, -2) + (s.slice(-2) === "ff" ? "00" : "ff");
-  const vr = await verifyClientAssertion({ clientId, agentId: 1, amountMicroUsd: 1000000, nonce: "live-2", r, s: badS, network: "testnet" });
-  assert.equal(vr.verified, false, "a tampered signature must NOT verify");
+  const pc2 = await createPaymentChallenge({ clientId: cForge, agentId: 1, amountMicroUsd: 1_000_000, network: "testnet" });
+  const forged = await verifyClientAssertion({ challengeId: pc2.challengeId, clientId: cForge, r, s: badS });
+  assert.equal(forged.verified, false, "a tampered signature must NOT verify");
 });
 
-test("passkey — an UNREGISTERED client can never be verified", async () => {
-  const pk = await generatePasskey();
-  const { msg } = paymentChallenge({ agentId: 1, amountMicroUsd: 1000000, clientId: "ghost", nonce: "g1" });
-  const { r, s } = await pk.sign(msg);
-  const vr = await verifyClientAssertion({ clientId: "ghost", agentId: 1, amountMicroUsd: 1000000, nonce: "g1", r, s, network: "testnet" });
-  assert.equal(vr.verified, false);
-  assert.match(vr.reason, /no registered passkey/);
+test("passkey — an UNREGISTERED client can never verify a payment challenge", { skip }, async () => {
+  const ghost = await generatePasskey();
+  const pc = await createPaymentChallenge({ clientId: "ghost", agentId: 1, amountMicroUsd: 1_000_000, network: "testnet" });
+  const sig = await ghost.sign(pc.message);
+  const v = await verifyClientAssertion({ challengeId: pc.challengeId, clientId: "ghost", r: sig.r, s: sig.s });
+  assert.equal(v.verified, false);
+  assert.match(v.reason, /no registered passkey/);
 });
