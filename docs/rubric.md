@@ -12,7 +12,7 @@ in code. Re-verify each line before submission (Phases may have advanced since t
 **Run it yourself:**
 ```bash
 cd merit
-npm test              # 20 tests (engine + money path + API integration)
+npm test              # 27 tests (engine + money path + API + live P256-precompile verify)
 npm run test:contracts # 8 Foundry tests (on-chain moat proof)
 npm start             # demo launcher: both sock-puppet demos + escalation-proof mandate
 npm run api           # the hire-then-settle app (API + UI) on :8130
@@ -34,10 +34,11 @@ frameworks."*
 
 | Claim | Status | How to verify |
 |---|---|---|
-| `npm test` = 21 passing | ✅ VERIFIED (10/11) | `npm test` |
+| `npm test` = 27 passing | ✅ VERIFIED (10/12) | `npm test` |
 | Contract tests = 8 passing | ✅ VERIFIED (10/11) | `npm run test:contracts` |
 | Demo 1: 50 sock puppets → score stays 0 | ✅ VERIFIED | `npm start` · `test/api.test.mjs` |
-| Demo 2: one settled $1 receipt → score moves + mandate unlocks | ✅ VERIFIED | `npm start` · `test/api.test.mjs` |
+| Demo 2: one settled $1 receipt moves score + mandate | ✅ VERIFIED | `npm start` · `test/api.test.mjs` |
+| **Verified client = P-256 passkey, not a self-declared flag** | ✅ VERIFIED live (10/12) | `node scripts/settle-demo.mjs` · `test/passkey.test.mjs` — a registered passkey settles `verified:true` (precompile `0x0100` returns `0x..01`); a missing/forged signature settles `verified:false` |
 | Escalation-proof mandate (Bankr refutation) | ✅ VERIFIED | `npm start` (DEMO 3) · `POST /api/mandate/enforce` |
 | Receipt ledger writes only on `err===null` | ✅ VERIFIED | `test/phase1.test.mjs` |
 | PaidGateway returns HTTP 402 (x402 v2 challenge) | ✅ VERIFIED (unit) | `test/phase1.test.mjs` + `src/gateway/server.mjs` |
@@ -58,9 +59,9 @@ frameworks."*
 
 ## Sponsor-tech load-bearing map (each is grep-able in code, not README speech)
 
-| Bounty sponsor | Claim | Where in code |
-|---|---|---|
-| **Monad P256 `0x0100`** | verified-client identity (the anti-sybil "distinct real client" weight) | `src/monad/config.mjs` → `P256_VERIFY` |
+| Bounty sponsor | Claim | Where in code | Live? |
+|---|---|---|---|
+| **Monad P256 `0x0100`** (EIP-7951) | verified-client identity — the anti-sybil "distinct real client" weight | `src/identity/passkey.mjs` → `verifyP256Signature` (eth_call to `0x0100`); wired into `POST /api/settle` + `scripts/settle-demo.mjs` | ✅ live (10/12): valid passkey → `0x..01` → `verified:true`; forged → refused |
 | **x402 v2 (Monad facilitator)** | the settlement primitive that produces receipts | `src/x402/facilitator.mjs` |
 | **ERC-8004** | the identity anchor we weight | `src/monad/erc8004.mjs`, `src/monad/config.mjs` |
 | **Envio** (bounty) | receipt graph indexer → on-chain re-derivability | `indexer/` (config.yaml + schema.graphql + src/EventHandlers.ts) |

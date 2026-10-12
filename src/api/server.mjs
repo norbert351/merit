@@ -26,10 +26,19 @@ import { enforceMandate, TIERS } from "../mandate/mandate.mjs";
 import { MERIT_CONTRACTS_TESTNET } from "../monad/merit-contracts.mjs";
 import { MONAD } from "../monad/config.mjs";
 import { hasExecutor, settleOnChain } from "../monad/settle.mjs";
+import {
+  registerClient, verifyClientAssertion, paymentChallenge, passkeyAddress,
+  P256_PRECOMPILE, P256_METHOD,
+} from "../identity/passkey.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dir, "..", "..", "public");
 const PORT = process.env.MERIT_API_PORT || process.env.PORT || 8130;
+
+// One-time-use guard: a passkey assertion is bound to (clientId, nonce) and may authorize
+// exactly ONE receipt — replaying it is rejected. (In-memory; a shared store is a roadmap item.)
+const usedNonces = new Set();
+export function __resetNonces() { usedNonces.clear(); }
 
 // The agent registry the API exposes. Mirrors public/app.js seedAgents() + the deployed
 // Merit contracts' agentIds (1 = the live demo agent whose scoreOf(1) reads on-chain).
@@ -89,6 +98,7 @@ export async function ensureSeeded(agentId) {
       deliverableHash: `0xdemo-${a.id}-${r.payer.slice(2, 10)}`,
       txHash: `0xdemotx${a.id}${r.payer.slice(2, 10)}`,
       chainId: MONAD.testnet.chainId,
+      verifyMethod: "seed-demo", // labeled: this row is seeded demo history, not a live assertion
     });
   }
 }
@@ -130,7 +140,7 @@ export async function agentView(a) {
     receipts: rows.map((r) => ({
       id: r.id, payer: r.payer, verified: !!r.payerVerified, amountUsd: r.amountUsd,
       delivered: r.outcome === "delivered", hash: r.deliverableHash, txHash: r.txHash,
-      status: r.status,
+      status: r.status, verifyMethod: r.verifyMethod ?? null,
     })),
   };
 }
@@ -179,6 +189,14 @@ async function handle(req, res) {
         verifiedClientBonusUsd: 5,
         sybilStakeUsd: 0.5,
         tiers: TIERS,
+        // The verified-client rail: a client proves identity with a P-256 passkey assertion
+        // checked by Monad's native precompile. This is what a "distinct verified client" IS.
+        p256: {
+          spec: "EIP-7951",
+          precompile: P256_PRECOMPILE,
+          method: P256_METHOD,
+          howItWorks: "client registers a P-256 passkey (pubX,pubY) -> signs the payment challenge -> server verifies via eth_call to 0x0100 -> only then payerVerified=true",
+        },
       });
     }
 
@@ -217,12 +235,45 @@ async function handle(req, res) {
       return json(res, 200, { ok: true, agentId: v.id, score: v.score.scoreUsd, ...verdict });
     }
 
+    // --- Passkey registration: bind a P-256 public key to a client id (one-time) ---
+    if (p === "/api/passkey/register" && req.method === "POST") {
+      const b = await readBody(req);
+      if (!b.clientId || !b.pubX || !b.pubY) return json(res, 400, { ok: false, error: "clientId, pubX, pubY required" });
+      try {
+        const c = await registerClient({ clientId: String(b.clientId), pubX: b.pubX, pubY: b.pubY, label: b.label ?? null });
+        return json(res, 200, { ok: true, client: { clientId: c.clientId, address: c.address, label: c.label }, method: P256_METHOD });
+      } catch (e) {
+        return json(res, 400, { ok: false, error: e.message });
+      }
+    }
+
     if ((p === "/api/settle" || p === "/tools/call") && req.method === "POST") {
       const b = await readBody(req);
       const sig = req.headers["payment-signature"] || req.headers["x-payment"] || b.signature || null;
+      const agentId = Number(b.agentId ?? 1);
+      const amountUsd = Number(b.amountUsd ?? 0);
+      const amountMicroUsd = Math.round(amountUsd * 1e6);
+      const nonce = String(b.nonce ?? "");
+      const clientId = b.clientId ? String(b.clientId) : null;
+
       // x402 discipline: no payment signature -> 402 challenge (never free).
+      // The challenge advertises the VERIFIED-CLIENT requirement: to be counted as a distinct
+      // verified client you must register a passkey and sign this challenge with it.
       if (!sig) {
-        const challenge = { x402Version: 2, scheme: "exact", network: `eip155:${MONAD.testnet.chainId}`, recipient: `merit-agent-${b.agentId ?? 1}` };
+        const challenge = {
+          x402Version: 2, scheme: "exact", network: `eip155:${MONAD.testnet.chainId}`,
+          recipient: `merit-agent-${agentId}`, amountMicroUsd,
+          verifiedClient: {
+            method: P256_METHOD,
+            precompile: P256_PRECOMPILE,
+            register: "POST /api/passkey/register { clientId, pubX, pubY }",
+            signMessage: clientId
+              ? paymentChallenge({ agentId, amountMicroUsd, clientId, nonce: nonce || "<nonce>" }).msg
+              : `merit:x402:v2:agent=${agentId}:amount=${amountMicroUsd}:client=<clientId>:nonce=<nonce>`,
+            submit: "replay with PAYMENT-SIGNATURE header + body { clientId, nonce, passkey:{ r, s } }",
+            note: "an unverified payer's money still settles — it just does not earn the verified-client floor",
+          },
+        };
         cors(res);
         res.writeHead(402, {
           "content-type": "application/json",
@@ -231,21 +282,47 @@ async function handle(req, res) {
         });
         return res.end(JSON.stringify({ ok: false, error: "payment_required", challenge }));
       }
-      const agentId = Number(b.agentId ?? 1);
-      const amountUsd = Number(b.amountUsd ?? 0);
+
       if (!(amountUsd > 0)) return json(res, 400, { ok: false, error: "amountUsd must be > 0" });
-      const payer = b.payer || "0xbuyer";
+
+      // --- VERIFIED-CLIENT GATE -----------------------------------------------------------
+      // Identity is proven by a P-256 passkey assertion checked by Monad's native precompile
+      // (0x0100). A caller's word is NOT enough: no registered key or a forged signature => the
+      // receipt is still recorded, but as UNVERIFIED, so it earns no verified-client floor.
+      let verified = false, verifyMethod = null, verifyNote = "no passkey assertion presented";
+      let payer = b.payer || "0xbuyer";
+      if (clientId && b.passkey?.r && b.passkey?.s) {
+        const nonceKey = `${clientId}:${nonce}`;
+        if (usedNonces.has(nonceKey)) {
+          verifyNote = "nonce already used (each assertion authorizes exactly one receipt)";
+        } else {
+          const vr = await verifyClientAssertion({
+            clientId, agentId, amountMicroUsd, nonce, r: b.passkey.r, s: b.passkey.s,
+            network: process.env.MERIT_NETWORK || "testnet",
+          });
+          verified = vr.verified; verifyMethod = vr.method; verifyNote = vr.reason;
+          if (verified) {
+            usedNonces.add(nonceKey);
+            if (vr.pubkey) payer = passkeyAddress(vr.pubkey); // identity derived from the passkey, not chosen
+          }
+        }
+      } else if (clientId) {
+        verifyNote = "passkey assertion (r,s) missing on a registered client";
+      } else {
+        verifyNote = "no clientId — anonymous payer, never counted as a verified client";
+      }
 
       // Write a PENDING receipt, then settle it only on a confirmed on-chain tx (err===null).
       const pending = await writeReceipt({
-        agentId, payer, payerVerified: 1, amountUsd,
+        agentId, payer, payerVerified: verified ? 1 : 0, amountUsd,
         deliverableHash: b.deliverableHash || `0x${Buffer.from(payer + amountUsd + Date.now()).toString("hex").slice(0, 64)}`,
         outcome: null, txHash: null, chainId: MONAD.testnet.chainId, status: "pending",
+        verifyMethod,
       });
 
       let txHash = null, onChainOk = false, mode = "demo";
       if (hasExecutor()) {
-        const r = await settleOnChain({ agentId, payer, amountMicroUsd: Math.round(amountUsd * 1e6), verified: true, delivered: true });
+        const r = await settleOnChain({ agentId, payer, amountMicroUsd, verified, delivered: true });
         txHash = r.txHash; onChainOk = r.ok; mode = "live";
       } else {
         // demo mode: no executor key. Simulate the settle so the demo flow completes, and the
@@ -258,6 +335,7 @@ async function handle(req, res) {
       return json(res, 200, {
         ok: true, mode, status: onChainOk ? "settled" : "reverted",
         receiptId: pending.id, txHash, agentId, amountUsd,
+        verified, verifyMethod, verifyNote,
         newScore: v.score.scoreUsd, newMandate: v.mandate,
       });
     }
@@ -280,7 +358,7 @@ async function handle(req, res) {
 
 export function startApi(port = PORT) {
   const server = createServer((req, res) => handle(req, res));
-  server.listen(port, () => console.log(`Merit API + UI on http://127.0.0.1:${server.address().port} (mode=${hasExecutor() ? "live" : "demo"})`));
+  server.listen(port, () => console.log(`Merit API + UI on http://127.0.0.1:${server.address().port} (mode=${hasExecutor() ? "live" : "demo"}) · verified-client rail=${P256_METHOD}@${P256_PRECOMPILE}`));
   return server;
 }
 

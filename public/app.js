@@ -227,7 +227,7 @@ function renderLedger(cont,rows,live){
   sorted.forEach(r=>{
     cont.appendChild(el("div",{class:"led-row"},
       el("span",{class:"who"},esc(r.payer)),
-      el("span",{class:"chip "+(r.verified?"v":"u")},r.verified?"verified":"unverified"),
+      el("span",{class:"chip "+(r.verified?"v":"u")}, r.verified ? (r.verifyMethod==="p256-precompile-0x0100" ? "verified · P256" : "verified") : "unverified"),
       el("span",{class:"amt"},fmtUsd(r.amountUsd)),
       el("span",{class:"hash"},esc(r.hash||"receipt-"+short(String(r.payer))))
     ));
@@ -261,31 +261,59 @@ function wireProof(app,a,s){
   });
 }
 
+/* ---- browser passkey (P-256 via WebCrypto) — the client half of the verified-client rail.
+   A real deployment swaps this for navigator.credentials (WebAuthn); the crypto is identical:
+   an ECDSA P-256 key signs the exact x402 challenge, verified server-side by the 0x0100 precompile. */
+function bytesToHex(buf){ return "0x"+[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join(""); }
+async function getPasskey(){
+  const KEY="merit.passkey.v1"; let s=null;
+  try{ s=JSON.parse(localStorage.getItem(KEY)||"null"); }catch{ s=null; }
+  if(!s){
+    const kp=await crypto.subtle.generateKey({name:"ECDSA",namedCurve:"P-256"},true,["sign","verify"]);
+    const raw=new Uint8Array(await crypto.subtle.exportKey("raw",kp.publicKey));
+    const priv=await crypto.subtle.exportKey("jwk",kp.privateKey);
+    s={ clientId:"browser-"+Math.random().toString(36).slice(2,8), pubX:bytesToHex(raw.slice(1,33)), pubY:bytesToHex(raw.slice(33,65)), priv };
+    localStorage.setItem(KEY, JSON.stringify(s));
+  }
+  const key=await crypto.subtle.importKey("jwk", s.priv, {name:"ECDSA",namedCurve:"P-256"}, false, ["sign"]);
+  return { clientId:s.clientId, pubX:s.pubX, pubY:s.pubY, async sign(msg){
+    const sig=new Uint8Array(await crypto.subtle.sign({name:"ECDSA",hash:"SHA-256"}, key, new TextEncoder().encode(msg)));
+    return { r:bytesToHex(sig.slice(0,32)), s:bytesToHex(sig.slice(32,64)) };
+  }};
+}
+
 function doSettle(app,a,s){
   const btn=$("#settleBtn",app); const st=$("#payStatus",app);
   const amt=parseFloat($("#settleAmt",app).value||"5");
   if(amt<=0){ flash(st,"err","Enter an amount above $0."); return; }
   btn.disabled=true; st.hidden=false;
   flash(st,"err","Requesting x402 challenge…");
-  // Real x402 would: GET /tools (or /tools/call) unsigned -> HTTP 402 -> decode PAYMENT-REQUIRED.
-  // Here we show the honest 402 challenge path (decode a real v2 header shape) then simulate settle
-  // ONLY as an in-browser demo when no backend is attached, else call the real settle endpoint.
   setTimeout(async ()=>{
     try{
       const base = BASE || location.origin;
       if(LIVE.ok){
-        // Real path: POST /api/settle. No PAYMENT-SIGNATURE -> the server returns HTTP 402
-        // (the real x402 challenge); we then replay with a signature to settle + mint the receipt.
-        const challenge = await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({agentId:a.id,amountUsd:amt})});
+        // 1) the client's passkey identity (P-256, persisted this session)
+        const pk=await getPasskey();
+        await fetch(`${base}/api/passkey/register`,{method:"POST",headers:{"content-type":"application/json"},
+          body:JSON.stringify({clientId:pk.clientId,pubX:pk.pubX,pubY:pk.pubY,label:"browser passkey"})});
+        const nonce="ui-"+Date.now().toString(36);
+        // 2) unsigned call -> real HTTP 402 challenge (names the passkey rail + what to sign)
+        const challenge=await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json"},
+          body:JSON.stringify({agentId:a.id,amountUsd:amt,clientId:pk.clientId,nonce})});
         if(challenge.status===402){
-          flash(st,"err","HTTP 402 — x402 challenge issued; signing payment…");
-          const r=await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json","payment-signature":"demo-sig"},body:JSON.stringify({agentId:a.id,payer:"0xbuyer",amountUsd:amt})});
+          const cj=await challenge.json().catch(()=>({}));
+          const msg=cj.challenge?.verifiedClient?.signMessage;
+          flash(st,"err","Passkey signing → verifying via Monad precompile 0x0100…");
+          const sig = msg ? await pk.sign(msg) : {r:null,s:null};
+          // 3) replay with the passkey assertion -> settle + verified-client determination
+          const r=await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json","payment-signature":"ui-sig"},
+            body:JSON.stringify({agentId:a.id,amountUsd:amt,clientId:pk.clientId,nonce,passkey:sig})});
           const j=await r.json();
           if(j.ok){
             const live = j.mode==="live" ? `Settled on-chain: ${j.txHash}` : `Settled (demo ledger): ${j.txHash}`;
-            flash(st,"ok",`${live} · score ${s.score} → ${j.newScore}`);
+            const vtag = j.verified ? `✅ passkey-verified (${j.verifyMethod})` : "⚠️ UNVERIFIED (no valid passkey)";
+            flash(st,"ok",`${live}<br>${vtag}<br>score ${s.score} → ${j.newScore}`);
             LIVE.mode=j.mode;
-            // Re-read the authoritative state (on-chain for the live agent) and re-render.
             await refreshAgent(a, base);
           } else flash(st,"err","Settle failed: "+(j.error||j.reason||"unknown"));
         } else {
@@ -293,14 +321,15 @@ function doSettle(app,a,s){
           flash(st,"err","Unexpected response: "+(j.error||challenge.status));
         }
       } else {
-        a.receipts.push({payer:"0xbuyer",verified:true,amountUsd:amt,delivered:true,hash:"demo-receipt"});
-        flash(st,"ok",`(in-browser demo) x402 settled ${fmtUsd(amt)} → receipt stamped on ledger. Score: ${s.score} → ${scoreAgent(a.receipts).score}. Start the API (npm run api) to settle live.`);
+        // No backend attached: cannot reach the precompile, so we DO NOT claim verification.
+        a.receipts.push({payer:"0xbuyer",verified:false,amountUsd:amt,delivered:true,hash:"demo-receipt"});
+        flash(st,"ok",`(in-browser demo) x402 settled ${fmtUsd(amt)} → receipt stamped on ledger. Score: ${s.score} → ${scoreAgent(a.receipts).score}. Start the API (npm run api) to verify a passkey via the 0x0100 precompile.`);
       }
       renderLedger($("#detLedger",app), a.receipts, LIVE.ok && a._live);
       renderMandate($("#mandateMeter",app), scoreOfAgent(a).score);
     }catch(e){ flash(st,"err","Settle failed: "+e.message); }
     btn.disabled=false;
-  },600);
+  },400);
 }
 function flash(el,kind,msg){ el.className="pay-status "+kind; el.innerHTML=esc(msg); }
 
@@ -310,7 +339,7 @@ async function refreshAgent(a, base){
     const r=await fetch(`${base}/api/agent/${a.id}`,{signal:AbortSignal.timeout(6000)});
     if(!r.ok) return;
     const j=await r.json(); const A=j.agent; if(!A) return;
-    a.receipts=(A.receipts||[]).map(x=>({payer:x.payer,verified:x.verified,amountUsd:x.amountUsd,delivered:x.delivered,hash:x.hash||x.txHash}));
+    a.receipts=(A.receipts||[]).map(x=>({payer:x.payer,verified:x.verified,amountUsd:x.amountUsd,delivered:x.delivered,hash:x.hash||x.txHash,verifyMethod:x.verifyMethod}));
     a._live=true;
     a._score=(A.score&&A.score.scoreUsd)??a._score;
     a._settled=(A.score&&A.score.settledUsd)??0;

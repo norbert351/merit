@@ -31,18 +31,19 @@ receipt graph that anchors every score only exists if writing a receipt is nearl
 1. **Identity** — a Merit agent registers in the ERC-8004 Identity Registry (Monad mainnet) → gets an `agentId`.
 2. **Paid surface** — the agent exposes MCP tools behind an **x402 v2** endpooint: a call with no payment returns **HTTP 402** (`PAYMENT-REQUIRED`).
 3. **Settle** — the buyer signs and replays with a `PAYMENT-SIGNATURE`; the server verifies it via the Monad facilitator (anti-fraud gate) then settles on-chain.
-4. **Receipt** — on **`err===null`** (transaction confirmed, never broadcast), a receipt `{agentId, verifiedPayer, amount, deliverableHash, outcome}` is written to the graph. A receipt exists **IFF money actually settled.**
-5. **Score** — reputation = settled money + distinct verified-client floor, with sybil clusters zeroed. Transparent and **re-derivable by a stranger** from the on-chain receipt graph.
-6. **Mandate** — the agent's authority = f(earned score), checked on **every** spend/action and **escalation-proof**: a higher permission tier still can't exceed the earned mandate.
+4. **Verified client** — to be counted as a *distinct verified client* (worth a score floor + the anti-sybil weight), the buyer registers a **P-256 passkey** and signs the exact payment challenge; the server verifies the assertion with **Monad's P256 precompile (EIP-7951, `0x0100`)**. No registered key or a forged signature → the receipt still settles, but as **unverified** — it can never move the verified-client floor.
+5. **Receipt** — on **`err===null`** (transaction confirmed, never broadcast), a receipt `{agentId, verifiedPayer, amount, deliverableHash, outcome}` is written to the graph. A receipt exists **IFF money actually settled.**
+6. **Score** — reputation = settled money + distinct **passkey-verified** client floor, with sybil clusters zeroed. Transparent and **re-derivable by a stranger** from the on-chain receipt graph.
+7. **Mandate** — the agent's authority = f(earned score), checked on **every** spend/action and **escalation-proof**: a higher permission tier still can't exceed the earned mandate.
 
 ## The two demos that win the room
-- **Demo 1 (immutable immunity):** 50 sock-puppet agents all praise each other → **score stays 0.**
-- **Demo 2 (the payoff):** one real paying customer settles via x402 → **score moves AND the agent's authority cap unlocks.**
+- **Demo 1 (immutable immunity):** 50 sock-puppet wallets each *claim* to be verified → the P256 gate refuses every forged/missing passkey → **score stays 0.**
+- **Demo 2 (the payoff):** one real customer settles via x402 **with a P-256 passkey** → the precompile verifies → **score moves AND the agent's authority cap unlocks.**
 - Pivot: escalate the attacker to a higher tier → the mandate **still holds** (direct Bankr answer).
 
 Both demos run in three places, all greppable: `npm start` (CLI), `npm run api` + the SPA
-(the hire-then-settle product, HTTP 402 → sign → settle → score moves), and `npm run test:contracts`
-(the same numbers on-chain via `MeritReputation.scoreOf`).
+(the hire-then-settle product, HTTP 402 → passkey-sign → settle → score moves), and
+`npm run test:contracts` (the same numbers on-chain via `MeritReputation.scoreOf`).
 
 ## The product surface
 `npm run api` serves the hire-then-settle app: browse agents sorted by settled credibility, read a
@@ -50,15 +51,17 @@ per-agent **receipt trail**, pay via **HTTP 402 → sign → settle**, watch the
 **bound-authority mandate** clamp an escalation attempt. Mobile-first, honest labeling (demo vs live).
 
 ## Verified vs. not-yet (honest)
-**Verified live (2026-10-11):** 21/21 JS tests pass; 8/8 Foundry contract tests pass; the merchant
-contract suite is **deployed and live on Monad testnet** (`MeritReputation` `0x92A1…114D`) and a real
-x402 `recordReceipt` tx settled on-chain (tx `0x3dd89821…`, status 1) — moving agent #1's score
-on-chain; both demos deterministic over HTTP; the hire-then-settle API + UI; x402 v2 facilitator
-reachable on testnet+mainnet; P256 `0x0100` present; ERC-8004 registries deployed on mainnet; Envio
-indexer config + enriched on-chain events confirmed emitting. See `docs/rubric.md` for the full
-per-claim matrix — including what is *not* yet on-chain (registering against the **canonical mainnet**
-ERC-8004 registry needs a funded mainnet wallet) and what's planned (video, hosted indexer, live
-deploy). **No blanket "all good."**
+**Verified live (2026-10-12):** 27/27 JS tests pass — including the **live P256-precompile** verify
+(a registered passkey over the challenge → `verified:true` at `0x0100`; a forged/missing one →
+`verified:false`); 8/8 Foundry contract tests pass; the merchant contract suite is **deployed and
+live on Monad testnet** (`MeritReputation` `0x92A1…114D`) and a real x402 `recordReceipt` tx settled
+on-chain (tx `0x3dd89821…`, status 1) — moving agent #1's score on-chain; the hire-then-settle API +
+UI drives the **passkey verified-client** rail end to end (`node scripts/settle-demo.mjs`); both demos
+deterministic over HTTP; x402 v2 facilitator reachable on testnet+mainnet; P256 `0x0100` live; ERC-8004
+registries deployed on mainnet; Envio indexer config + enriched on-chain events confirmed emitting.
+See `docs/rubric.md` for the full per-claim matrix — including what is *not* yet on-chain (registering
+against the **canonical mainnet** ERC-8004 registry needs a funded mainnet wallet) and what's planned
+(video, hosted indexer, live deploy). **No blanket "all good."**
 
 ## Links
 - Code: `github.com/norbert351/merit`

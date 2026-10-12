@@ -4,12 +4,15 @@
   "description": "Merit — sybil-resistant, settled-money-weighted agent reputation for Monad (Metropolis Track 04). See Plan.md.",
   "type": "module",
   "scripts": {
-    "test": "node --test",
+    "test": "NODE_OPTIONS=--dns-result-order=ipv4first node --test",
     "test:contracts": "cd contracts && forge test",
-    "start": "node src/index.mjs",
-    "api": "node src/api/server.mjs",
+    "start": "NODE_OPTIONS=--dns-result-order=ipv4first node src/index.mjs",
+    "api": "NODE_OPTIONS=--dns-result-order=ipv4first node src/api/server.mjs",
+    "p256": "NODE_OPTIONS=--dns-result-order=ipv4first node scripts/p256probe.mjs",
+    "settle:demo": "NODE_OPTIONS=--dns-result-order=ipv4first node scripts/settle-demo.mjs",
+    "seed": "NODE_OPTIONS=--dns-result-order=ipv4first node src/api/seed.mjs",
     "ui": "node serve.mjs",
-    "dev": "node src/api/server.mjs"
+    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first node src/api/server.mjs"
   },
   "engines": { "node": ">=22" },
   "dependencies": {

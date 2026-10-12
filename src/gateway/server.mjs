@@ -15,6 +15,7 @@ import { FacilitatorClient } from "../x402/facilitator.mjs";
 import { writeReceipt, reconcileReceipt } from "../receipt/ledger.mjs";
 import { publicClient } from "../monad/erc8004.mjs";
 import { MONAD, X402_FACILITATOR_URL } from "../monad/config.mjs";
+import { verifyClientAssertion, passkeyAddress } from "../identity/passkey.mjs";
 
 // In production the private key lives behind the facilitator service (it covers gas).
 // This is the one place MERIT_EXECUTOR_KEY is read; absent → verification-only mode
@@ -68,11 +69,24 @@ class PaidGateway {
    * Settle a verified payment and write the receipt ONLY on err===null.
    * @returns {Promise<{status:'settled'|'verification_only'|'reverted', txHash?, receiptId?}>}
    */
-  async settleAndRecord({ payload, signature, payer, amountUsd, deliverableHash }) {
+  async settleAndRecord({ payload, signature, payer, amountUsd, deliverableHash, clientId, nonce, passkey }) {
     // 1) verify first (anti-fraud: a bogus signature never settles)
     const v = await this.verifyPayment({ payload, signature });
     if (!v || v.isValid === false) {
       return { status: "rejected", reason: "PAYMENT-SIGNATURE not verified by facilitator" };
+    }
+
+    // 1b) VERIFIED-CLIENT GATE: a payer only earns the verified-client floor by proving a
+    //     P-256 passkey assertion (verified by Monad's precompile). Absent/forged => unverified.
+    let verified = false, verifyMethod = null;
+    let payerId = payer;
+    if (clientId && passkey?.r && passkey?.s) {
+      const vr = await verifyClientAssertion({
+        clientId, agentId: this.agentId, amountMicroUsd: Math.round((amountUsd || 0) * 1e6),
+        nonce: nonce ?? "", r: passkey.r, s: passkey.s, network: NETWORK,
+      });
+      verified = vr.verified; verifyMethod = vr.method;
+      if (verified && vr.pubkey) payerId = passkeyAddress(vr.pubkey);
     }
 
     // 2) settlement path
@@ -89,32 +103,34 @@ class PaidGateway {
       }
       const receiptId = await writeReceipt({
         agentId: this.agentId,
-        payer,
-        payerVerified: 1,
+        payer: payerId,
+        payerVerified: verified ? 1 : 0,
         amountUsd,
         deliverableHash,
         outcome: onChainOk ? "delivered" : null,
         txHash,
         chainId: this.chainId,
         status: onChainOk ? "settled" : "reverted",
+        verifyMethod,
       });
-      return { status: onChainOk ? "settled" : "reverted", txHash, receiptId, onChainOk };
+      return { status: onChainOk ? "settled" : "reverted", txHash, receiptId, onChainOk, verified };
     }
 
     // 3) verification-only mode: challenge is issued; settlement recorded by an external
     //    settle hook (facilitator). Still record a PENDING receipt so reconcile can settle it.
     const receiptId = await writeReceipt({
       agentId: this.agentId,
-      payer,
-      payerVerified: 1,
+      payer: payerId,
+      payerVerified: verified ? 1 : 0,
       amountUsd,
       deliverableHash,
       outcome: null,
       txHash: null,
       chainId: this.chainId,
       status: "pending",
+      verifyMethod,
     });
-    return { status: "verification_only", receiptId, note: "no executor key; pending reconciled by settle hook" };
+    return { status: "verification_only", receiptId, verified, note: "no executor key; pending reconciled by settle hook" };
   }
 
   handle(req, res) {
@@ -138,6 +154,9 @@ class PaidGateway {
             payer: parsed.payer || "0xbuyer",
             amountUsd: parsed.amountUsd || 0,
             deliverableHash: parsed.deliverableHash || null,
+            clientId: parsed.clientId || null,
+            nonce: parsed.nonce ?? "",
+            passkey: parsed.passkey || null,
           });
           return this._json(res, 200, r);
         }

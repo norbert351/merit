@@ -55,26 +55,32 @@ test("API — DEMO 1: 50 sock puppets cannot buy a score (suppression holds)", a
   assert.equal(a1.score.effectivelySettledUsd, 245, "none of the $0.0001 dust moved the score");
 });
 
-test("API — DEMO 2: one real x402 settlement moves a cold-start agent's score + mandate", async () => {
+test("API — DEMO 2: x402 settlement is challenged, and only a passkey earns the verified floor", async () => {
   const before = (await get("/api/agent/4")).agent;
   assert.equal(before.score.scoreUsd, 0);
 
-  // Step 1: no payment signature -> real HTTP 402 challenge
+  // Step 1: no payment signature -> real HTTP 402 challenge that advertises the passkey rail
   const c = await post("/api/settle", { agentId: 4, amountUsd: 5 });
   assert.equal(c.status, 402, "settle without a payment signature is challenged, never free");
   assert.ok(c.headers.get("payment-required"), "PAYMENT-REQUIRED header carries the challenge");
+  const ch = await c.json();
+  assert.equal(ch.challenge.verifiedClient.method, "p256-precompile-0x0100", "the challenge names the P256 precompile rail");
 
-  // Step 2: replay with a payment signature -> settle + mint the receipt
+  // Step 2: replay with a payment signature but NO passkey assertion -> settles, but UNVERIFIED
   const r = await post("/api/settle", { agentId: 4, amountUsd: 5, payer: "0xbuyerTest" }, { "payment-signature": "sig" });
   const j = await r.json();
   assert.equal(j.ok, true);
   assert.equal(j.status, "settled");
   assert.equal(j.mode, "demo", "still demo: labeled honestly, not claimed on-chain");
+  assert.equal(j.verified, false, "no passkey assertion => NEVER counted as a verified client");
+  assert.equal(j.verifyMethod, null);
 
-  // Step 3: the score moved and the receipt is on the ledger
+  // Step 3: the settled money moved the score, but no verified-client floor was granted
   const after = (await get("/api/agent/4")).agent;
-  assert.equal(after.score.scoreUsd, 10, "score moved off zero (5 settled + 1 verified client * 5)");
+  assert.equal(after.score.scoreUsd, 5, "5 settled, 0 verified bonus (identity was not proven)");
+  assert.equal(after.score.distinctVerifiedClients, 0);
   assert.equal(after.receipts.length, 1);
+  assert.equal(after.receipts[0].verified, false);
 });
 
 test("API — /api/mandate/enforce is escalation-proof (Bankr refutation)", async () => {

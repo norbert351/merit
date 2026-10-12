@@ -34,7 +34,19 @@ function db() {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_receipts_agent ON receipts(agentId);
+
+    -- Passkey (P256/WebAuthn) client registry: the ONLY source of a client's verified identity.
+    CREATE TABLE IF NOT EXISTS clients (
+      clientId TEXT PRIMARY KEY,
+      pubX TEXT NOT NULL,
+      pubY TEXT NOT NULL,
+      chainId INTEGER,
+      label TEXT,
+      created_at INTEGER NOT NULL
+    );
   `);
+  // Forward-migration: record WHICH rail proved a receipt's payerVerified (honesty + UI).
+  try { _db.exec(`ALTER TABLE receipts ADD COLUMN verifyMethod TEXT`); } catch { /* already present */ }
   return _db;
 }
 
@@ -43,8 +55,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export async function writeReceipt(entry) {
   await sleep(0); // yield
   const stmt = db().prepare(`
-    INSERT INTO receipts (agentId, payer, payerVerified, amountUsd, deliverableHash, outcome, txHash, chainId, status, created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO receipts (agentId, payer, payerVerified, amountUsd, deliverableHash, outcome, txHash, chainId, status, verifyMethod, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
   `);
   const res = stmt.run(
     entry.agentId ?? 0,
@@ -56,6 +68,7 @@ export async function writeReceipt(entry) {
     entry.txHash ?? null,
     entry.chainId ?? null,
     entry.status ?? "pending",
+    entry.verifyMethod ?? null,
     Math.floor(Date.now() / 1000),
   );
   return { id: Number(res.lastInsertRowid) };
@@ -78,4 +91,26 @@ export async function readReceipt(id) {
 export async function receiptsForAgent(agentId) {
   await sleep(0);
   return db().prepare(`SELECT * FROM receipts WHERE agentId=? ORDER BY id ASC`).all(agentId);
+}
+
+// --- Passkey client registry ---------------------------------------------------------------
+
+export async function upsertClient({ clientId, pubX, pubY, chainId = null, label = null }) {
+  await sleep(0);
+  db().prepare(`
+    INSERT INTO clients (clientId, pubX, pubY, chainId, label, created_at)
+    VALUES (?,?,?,?,?,?)
+    ON CONFLICT(clientId) DO UPDATE SET pubX=excluded.pubX, pubY=excluded.pubY, chainId=excluded.chainId, label=excluded.label
+  `).run(clientId, pubX, pubY, chainId, label, Math.floor(Date.now() / 1000));
+  return getClient(clientId);
+}
+
+export async function getClient(clientId) {
+  await sleep(0);
+  return db().prepare(`SELECT * FROM clients WHERE clientId=?`).get(clientId) ?? null;
+}
+
+export async function listClients() {
+  await sleep(0);
+  return db().prepare(`SELECT * FROM clients ORDER BY created_at ASC`).all();
 }
