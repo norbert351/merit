@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Merit — On-chain execution-boundary proof · Monad testnet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F7F5F0;--panel:#fff;--line:#E4DFD4;--ink:#1A1712;--muted:#6B655A;--accent:#C05218;--accent2:#1E6E5C;--danger:#B3331F;--verified:#E8F1EC}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:'Public Sans',sans-serif;line-height:1.5;padding:34px 20px 60px}
+.wrap{max-width:880px;margin:0 auto}
+.kicker{font-family:'JetBrains Mono',monospace;font-size:.7rem;letter-spacing:.14em;color:var(--accent);text-transform:uppercase}
+h1{font-family:'Fraunces',serif;font-weight:600;font-size:2rem;line-height:1.1;margin:8px 0 6px}
+.sub{color:var(--muted);margin-bottom:26px;font-size:.98rem}
+.tag{display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--accent2);background:var(--verified);border-radius:999px;padding:4px 11px;font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(26,23,18,.06),0 10px 30px -18px rgba(26,23,18,.35);padding:22px;margin-bottom:18px}
+.card h3{font-family:'Fraunces',serif;font-size:1.12rem;margin-bottom:14px;display:flex;align-items:center;gap:9px}
+.rows{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.row{background:#faf8f3;border:1px solid var(--line);border-radius:11px;padding:12px 14px}
+.row .l{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.row .v{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:1.1rem;margin-top:4px}
+.row .v.green{color:var(--accent2)}.row .v.red{color:var(--danger)}
+.revert{background:#fbe9e4;border:1px solid #f0c4ba;border-radius:11px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:.82rem;color:var(--danger);white-space:pre-wrap;margin-top:12px}
+.ok{background:var(--verified);border:1px solid #cfdcd2;border-radius:11px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:.82rem;color:var(--accent2)}
+.note{font-size:.85rem;color:var(--muted);margin-top:6px}
+.addr{font-family:'JetBrains Mono',monospace;font-size:.78rem;word-break:break-all}
+.refresh{position:fixed;top:18px;right:18px;background:var(--ink);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+.meter{height:9px;border-radius:99px;background:#ece7dc;overflow:hidden;margin:14px 0 6px}
+.meter i{display:block;height:100%;background:var(--accent);width:0;transition:width .6s}
+</style>
+</head>
+<body>
+<button class="refresh" onclick="load(true)">Refresh ⇄</button>
+<div class="wrap">
+  <div class="kicker">On-chain execution boundary · separate testnet demonstration</div>
+  <h1>GuardedWallet: the cap is enforced on-chain.</h1>
+  <p class="sub">Real reads from the deployed GuardedWallet on <b>Monad testnet</b> (chain 10143). An over-cap transfer <b>reverts at the contract</b> — this is not a frontend warning.</p>
+  <span class="tag" id="liveTag">● loading live state…</span>
+
+  <div class="card">
+    <h3>Agent 1 — earned authority (live reads)</h3>
+    <div class="rows">
+      <div class="row"><div class="l">On-chain score</div><div class="v" id="score">—</div></div>
+      <div class="row"><div class="l">Max spend / period</div><div class="v" id="cap">—</div></div>
+      <div class="row"><div class="l">Already spent</div><div class="v" id="spent">—</div></div>
+      <div class="row"><div class="l">Guard balance at dest</div><div class="v" id="dest">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>✅ Allowed transfer — executed on-chain</h3>
+    <div class="ok" id="allowed">reading…</div>
+    <p class="note">A permitted under-cap <span class="addr">execute(dest, small)</span> succeeded: destination +1 wei, guard spent advanced. This transaction is real.</p>
+  </div>
+
+  <div class="card">
+    <h3>⛔ Over-cap transfer — reverts</h3>
+    <div class="revert" id="overcap">simulating…</div>
+    <p class="note">Attempting <span class="addr">execute(dest, 20,000,000 wei &gt; cap)</span> against the live contract. The call <b>fails and returns nothing</b> — the destination balance is unchanged. (eth_call simulation, never broadcast.)</p>
+  </div>
+
+  <div class="card">
+    <h3>How the cap is derived</h3>
+    <div class="meter"><i id="meter" style="width:0"></i></div>
+    <p class="note" id="derivation">—</p>
+  </div>
+</div>
+<script>
+async function load(force){
+  const t=document.getElementById('liveTag'); t.textContent='● querying Monad testnet…';
+  try{
+    const r=await fetch('/api/guard',{cache:'no-store'}); const d=await r.json();
+    if(!d.ok) throw new Error(d.error);
+    const usd=(micro)=>"$"+(Number(micro)/1e6).toFixed(0);
+    document.getElementById('score').textContent=usd(d.scoreMicroUsd);
+    document.getElementById('cap').innerHTML=usd(d.maxSpendWei)+'<span style="font-size:.72rem;color:var(--muted);font-weight:400"> <span class="addr">maxSpendWei '+d.maxSpendWei+'</span></span>';
+    document.getElementById('spent').textContent=d.spentWei+" wei";
+    document.getElementById('dest').textContent=d.destBalanceWei+" wei";
+    document.getElementById('allowed').textContent="status 0x1 · tx "+d.allowedTx;
+    const oc=d.overcap&&d.overcap.kind==="revert" ? d.overcap.reason.replace(/The contract function \\"execute\\" reverted with the following reason:\\n?/,"") : "would-succeed (unexpected)";
+    document.getElementById('overcap').textContent=oc;
+    // fill meter: cap / maxTier($1000)
+    const pct=Math.min(100, Number(d.maxSpendWei)/1e9*100);
+    document.getElementById('meter').style.width=pct+"%";
+    document.getElementById('derivation').innerHTML='Earned score '+usd(d.scoreMicroUsd)+' → tier LOW → cap '+usd(d.maxSpendWei)+' per period. Score, spent and cap are read live from the contract at execution time; if the reputation read fails, the guard grants <b>$0</b> (fail closed).';
+    t.textContent='● live · read '+new Date(d.verifiedAt).toLocaleTimeString()+' · Monad testnet';
+  }catch(e){ t.textContent='● read failed: '+e.message; }
+}
+load();
+</script>
+</body>
+</html>

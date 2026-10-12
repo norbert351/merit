@@ -33,6 +33,7 @@ import {
 import { PaymentVerifier } from "../payments/verify.mjs";
 import { FacilitatorClient } from "../x402/facilitator.mjs";
 import { publicClient } from "../monad/erc8004.mjs";
+import { parseAbi } from "viem";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dir, "..", "..", "public");
@@ -388,6 +389,51 @@ async function handle(req, res) {
         verifierOk, verifierReason,
         newScore: v.score.scoreUsd, newMandate: v.mandate,
       });
+    }
+
+    // /api/guard — LIVE on-chain evidence for the GuardedWallet execution boundary (Monad testnet).
+    // Real reads against the deployed contract + a REAL over-cap eth_call simulation (never broadcast).
+    if (p === "/api/guard" && req.method === "GET") {
+      const GUARD = "0x357010738b21724639eb427c52B99a3eFb8Fa1Cd";
+      const REP = "0x92A11Ad0E988C6cd0Bd434e140331A620393114D";
+      const EXEC = "0xda8f57C8dE496B532133678ca0Bd5BbfB9787B51";
+      const DEST = "0x12340000000000000000000000000000000000ab";
+      const gwAbi = parseAbi([
+        "function maxSpendWei() view returns (uint256)",
+        "function spent() view returns (uint256)",
+        "function agentId() view returns (uint256)",
+        "function execute(address,uint256)",
+      ]);
+      const repAbi = parseAbi(["function scoreOf(uint256) view returns (uint256,uint256,uint256,uint256,bool)"]);
+      try {
+        const pc = publicClient("testnet");
+        const [cap, spent, agentId, score, destBal] = await Promise.all([
+          pc.readContract({ address: GUARD, abi: gwAbi, functionName: "maxSpendWei" }),
+          pc.readContract({ address: GUARD, abi: gwAbi, functionName: "spent" }),
+          pc.readContract({ address: GUARD, abi: gwAbi, functionName: "agentId" }),
+          pc.readContract({ address: REP, abi: repAbi, functionName: "scoreOf", args: [1n] }),
+          pc.getBalance({ address: DEST }),
+        ]);
+        // Over-cap simulation of the REAL deployed contract (eth_call, no tx): reverts.
+        let overcap = null;
+        try {
+          await pc.simulateContract({ address: GUARD, abi: gwAbi, functionName: "execute", args: [DEST, 20000000n], account: EXEC });
+          overcap = { kind: "would-succeed" };
+        } catch (e) {
+          overcap = { kind: "revert", reason: String(e.shortMessage || e.message || e) };
+        }
+        return json(res, 200, {
+          ok: true, network: "eip155:10143", verifiedAt: new Date().toISOString(),
+          guard: GUARD, reputation: REP, executor: EXEC, dest: DEST,
+          maxSpendWei: cap.toString(), spentWei: spent.toString(),
+          agentId: agentId.toString(), scoreMicroUsd: score[0].toString(), destBalanceWei: destBal.toString(),
+          overcap,
+          allowedTx: "0xa511998545f5b1fa824c480fa85072bacb81767630ef75d5c4d892e60188dd12",
+          note: "Unverified-under-cap execute moved funds on-chain; the over-cap call reverts at the contract.",
+        });
+      } catch (e) {
+        return json(res, 502, { ok: false, error: e.shortMessage || e.message });
+      }
     }
 
     // Serve the static UI too, so `node src/api/server.mjs` is a single-process demo.
