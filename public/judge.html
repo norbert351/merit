@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Merit — Judge Access & Try-It Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F7F5F0;--panel:#fff;--line:#E4DFD4;--ink:#1A1712;--muted:#6B655A;--accent:#C05218;--green:#1E6E5C;--red:#B3331F;--verified:#E8F1EC}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:'Public Sans',system-ui,sans-serif;line-height:1.6;padding:36px 20px 70px}
+.wrap{max-width:820px;margin:0 auto}
+.kicker{font-family:'JetBrains Mono',monospace;font-size:.7rem;letter-spacing:.14em;color:var(--accent);text-transform:uppercase}
+h1{font-family:'Fraunces',serif;font-weight:600;font-size:2.1rem;line-height:1.1;margin:8px 0 6px}
+.sub{color:var(--muted);margin-bottom:8px}
+h2{font-family:'Fraunces',serif;font-weight:600;font-size:1.3rem;margin:30px 0 12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(26,23,18,.06),0 12px 34px -22px rgba(26,23,18,.4);padding:22px 24px;margin-bottom:16px}
+ol,ul{margin:8px 0 4px 22px}li{margin:7px 0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:var(--accent);font-weight:600;text-decoration:none}
+a:hover{text-decoration:underline}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;border-radius:11px;padding:11px 18px;font-weight:600;text-decoration:none;margin:6px 8px 0 0;box-shadow:0 8px 22px -12px rgba(192,82,24,.8)}
+.tag{display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:.72rem;border-radius:999px;padding:3px 10px;font-weight:600}
+.tag.ok{background:var(--verified);color:var(--green)}.tag.no{background:#fdeee4;color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:.9rem;margin-top:6px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font-family:'JetBrains Mono',monospace;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.code{background:#15130F;color:#e9e3d8;border-radius:11px;padding:14px 16px;font-family:'JetBrains Mono',monospace;font-size:.8rem;white-space:pre-wrap;margin-top:8px}
+.note{background:var(--verified);border:1px solid #cfdcd2;border-radius:11px;padding:12px 14px;font-size:.9rem;margin-top:10px}
+.warn{background:#fbe9e4;border:1px solid #f0c4ba;border-radius:11px;padding:12px 14px;font-size:.9rem;margin-top:10px;color:#7a2417}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">Monad Metropolis · Track 04 · Judge access</div>
+  <h1>Try Merit in ~5 minutes.</h1>
+  <p class="sub">Everything below runs on the live deployment — nothing to install. The address bar shows the real domain on every page.</p>
+  <div>
+    <a class="btn" href="/app">Open the product</a>
+    <a class="btn" href="/" style="background:var(--ink)">See the landing</a>
+    <a class="btn" href="/proof.html" style="background:var(--green)">On-chain proof</a>
+  </div>
+
+  <h2>1 · "Login" — there's no account to create</h2>
+  <div class="card">
+    Merit is <b>open and read-only for judges</b>. You don't need to sign up.
+    <ol>
+      <li>Top-right, click <b>Connect</b> → a wallet-style modal opens.</li>
+      <li><b>No test credentials exist to leak</b> — there is no password database. Pick either:
+        <ul>
+          <li>Click <b>Connect wallet</b> → since the demo has no browser wallet, it returns <span class="mono">Read-only explore mode (no wallet present)</span> (honest — no wallet is faked).</li>
+          <li>Or type <b>any handle</b> (e.g. <span class="mono">judge</span>) + any password → <b>Sign in</b> → shows <span class="mono">Signed in as judge</span>.</li>
+        </ul>
+      </li>
+    </ol>
+    <div class="note">The whole product works <b>without</b> connecting anything — the modal is presentation only. The real cryptographic action is the passkey payment in step 3.</div>
+  </div>
+
+  <h2>2 · Browse the reputation ledger</h2>
+  <div class="card">
+    On <a href="/app">/app</a>, scroll to <b>Verified agents</b> (4 agents sorted by settled credibility: Frax Data Oracle $245, Vault Guard $90, Rebalance Bot $15, comms-agent $0). Click one to see its <b>settled receipt trail</b> (each row carries a <span class="mono">verified · P256</span> or <span class="mono">unverified</span> chip), <b>Copy proof command</b>, and the <b>Bound authority</b> mandate it earned.
+  </div>
+
+  <h2>3 · Run a real verified payment</h2>
+  <div class="card">
+    On an agent page, in <b>Hire &amp; settle</b>:
+    <ol>
+      <li>Leave the amount at <span class="mono">$5</span> (any value works).</li>
+      <li>Click <b>Pay via x402 &amp; receive receipt</b>.</li>
+      <li>Watch it live: your browser makes a <b>P-256 passkey</b> → a <b>server-issued challenge</b> → the signature is verified against <b>Monad's native P-256 precompile (<span class="mono">0x0100</span>)</b> → a <b>verified receipt</b> lands and the score updates.</li>
+    </ol>
+    <div class="warn"><b>Honest caveat:</b> this deployment runs in <b>demo mode (no executor key)</b>, so the receipt lands on the labelled <i>demo ledger</i>, not a broadcast tx. The passkey check against <span class="mono">0x0100</span> is real. With an executor key set, the same click broadcasts a real <span class="mono">recordReceipt()</span> tx.</div>
+  </div>
+
+  <h2>4 · See authority enforced on-chain</h2>
+  <div class="card">
+    <ul>
+      <li>On the agent page click <b>Try escalate to HIGH tier</b> → <b>BLOCKED</b> (can't spend past the earned tier — the Bankr fix).</li>
+      <li>Open <a href="/proof.html">/proof.html</a> — live reads from the deployed contract: score <b>$71</b> → cap <b>$10</b>; the <b>allowed</b> under-cap transfer that executed on-chain (tx <span class="mono">0xa511…dd12</span>); the <b>over-cap</b> transfer that <b>reverts</b>: <span class="mono">GuardedWallet: exceeds per-transaction cap</span>.</li>
+    </ul>
+  </div>
+
+  <h2>5 · Verify it yourself (no login)</h2>
+  <div class="card">
+    <div class="mono" style="font-size:.82rem">GET <a href="/api/guard">/api/guard</a> — live contract reads + the real over-cap revert</div>
+    <div class="code">R=https://testnet-rpc.monad.xyz
+GUARD=0x357010738b21724639eb427c52B99a3eFb8Fa1Cd
+REP=0x92A11Ad0E988C6cd0Bd434e140331A620393114D
+cast call $GUARD "maxSpendWei()(uint256)" -r $R     # 10000000  ($10 earned cap)
+cast call $GUARD "spent()(uint256)"      -r $R      # 201
+cast call $REP "scoreOf(uint256)(uint256,uint256,uint256,uint256,bool)" 1 -r $R   # 71000000 ($71)</div>
+  </div>
+
+  <h2>6 · Live vs. not-yet (no blanket claims)</h2>
+  <div class="card">
+    <table>
+      <tr><th>Item</th><th>Status</th></tr>
+      <tr><td>Reputation + mandate contracts (Monad testnet 10143)</td><td><span class="tag ok">live</span></td></tr>
+      <tr><td>GuardedWallet execution boundary</td><td><span class="tag ok">live</span></td></tr>
+      <tr><td>P-256 passkey verified-client rail (0x0100)</td><td><span class="tag ok">live</span></td></tr>
+      <tr><td>x402 payment + receipt ledger</td><td><span class="tag ok">live</span> · demo mode on public URL</td></tr>
+      <tr><td>Canonical mainnet ERC-8004 registration</td><td><span class="tag no">not done</span> (registry is mainnet-only)</td></tr>
+      <tr><td>Hosted Envio indexer</td><td><span class="tag no">not deployed</span> (config valid; local parity passes)</td></tr>
+    </table>
+    <div class="note"><b>No test credentials exist</b> — there is no account system, no seeded password, and the public demo uses no private key.</div>
+  </div>
+  <p class="sub" style="margin-top:22px">Repo: <a href="https://github.com/norbert351/merit">github.com/norbert351/merit</a> · builder @zubby_crypt</p>
+</div>
+</body>
+</html>
