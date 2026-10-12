@@ -49,9 +49,11 @@ Both demos run in three places, all greppable: `npm start` (CLI), `npm run api` 
 `npm run test:contracts` (the same numbers on-chain via `MeritReputation.scoreOf`).
 
 ## The product surface
-`npm run api` serves the hire-then-settle app: browse agents sorted by settled credibility, read a
-per-agent **receipt trail**, pay via **HTTP 402 → sign → settle**, watch the score move, and see the
-**bound-authority mandate** clamp an escalation attempt. Mobile-first, honest labeling (demo vs live).
+`npm run api` serves the marketing landing at `/` and the hire-then-settle product at **`/app`**:
+browse agents sorted by settled credibility, read a per-agent **receipt trail**, pay via
+**HTTP 402 → sign → settle**, watch the score move, and see the **bound-authority mandate** clamp an
+escalation attempt. Mobile-first, honest labeling (demo vs live). The landing is a pure marketing
+page (no live onchain reads) that funnels into `/app`; the wrapper runs the live ledger.
 
 ## Verified vs. not-yet (honest)
 **Verified live (2026-10-12):** 34/34 JS tests pass — including the **live P256-precompile** verify
