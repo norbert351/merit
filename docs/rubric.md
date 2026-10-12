@@ -53,7 +53,7 @@ frameworks."*
 | **On-chain enriched events (`ReceiptRecorded` 8-arg + `SybilClusterSuppressed`)** | ✅ VERIFIED emitting live (10/11) | `cast logs --address 0x92A1…114D` |
 | Live ERC-8004 `register()` on canonical mainnet registry | ⚠️ NOT YET — needs funded mainnet wallet | run `registerAgent` with a funded mainnet key |
 | Real demo video ≤20MB 720p | ❌ NOT STARTED | Phase 5 |
-| Live deploy + keepalive through judging (Nov 3) | ⚠️ `render.yaml` added; not yet deployed | Phase 5 |
+| Live deploy + keepalive through judging (Nov 3) | ⚠️ render.yaml ready, **not yet deployed** (needs Render dashboard or a DNS record); keepalive script ready at `~/.hermes/scripts/merit-keepalive.sh` | Phase 5 |
 
 ---
 
@@ -84,10 +84,15 @@ frameworks."*
 - [x] Repo public (`github.com/norbert351/merit`, public)
 - [x] No secrets/keys/DBs in git (`data/`, `node_modules/`, `contracts/out|cache|broadcast`, `.env` gitignored; `.env.example` ships)
 - [x] Hire-then-settle UI (mobile-first, honest live/demo labeling)
+- [x] `README.md` (thesis, status, run-it, key links)
+- [x] `ARCHITECTURE.md` (system diagram + counterfactual "remove a rail" table) — written 2026-10-12
+- [x] `docs/TECHNICAL.md` (stack, algorithm, data model, contract addresses, API, reproduce) — written 2026-10-12
+- [x] `docs/ROADMAP.md` (demo → product, honest not-yet list) — written 2026-10-12
 - [x] `docs/SUBMISSION.md` paste-ready + honest ✅/⚠️/❌ matrix
 - [x] Envio indexer config + on-chain enriched events
-- [ ] Live Monad x402 demo with a real settled receipt (needs funded `MERIT_EXECUTOR_KEY` — code path ready in `src/monad/settle.mjs`)
+- [x] **Live Monad x402 `recordReceipt` on-chain** (tx `0x3dd89821…`, status 1) — written to the live contract
+- [ ] Live Monad **deploy URL** (the always-on demo — `render.yaml` ready; needs the Render dashboard or a DNS record)
 - [ ] On-chain ERC-8004 `register()` (mainnet) for the demo agent
 - [ ] `envio deploy` (host the receipt graph — $5K hosting bounty)
 - [ ] Real demo video (≤20MB 720p, on-camera settled-receipt action, both demos)
-- [ ] Keepalive for the live deploy through Nov 3
+- [ ] Keepalive for the live deploy through Nov 3 (script ready: `~/.hermes/scripts/merit-keepalive.sh`)

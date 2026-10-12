@@ -48,6 +48,10 @@ only on `err===null`.
 
 ## Key links
 - `Plan.md` — the master plan (thesis, anti-thesis test, architecture, roadmap, risks, gating)
+- `ARCHITECTURE.md` — system diagram + the "remove a rail → what happens" counterfactual table
+- `docs/TECHNICAL.md` — stack, algorithm, data model, contract addresses, API, reproduce
+- `docs/ROADMAP.md` — demo → product path
+- `docs/SUBMISSION.md` — paste-ready write-up · `docs/rubric.md` — judge-verification map
 - `src/identity/passkey.mjs` — **the verified-client rail**: P-256 passkey assertion verified by Monad's `0x0100` precompile
 - `src/reputation/onchain-score.mjs` — the sybil-resistant scoring engine (the moat), re-derivable by a stranger
 - `src/mandate/mandate.mjs` — the binding, escalation-proof authority cap

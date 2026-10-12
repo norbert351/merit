@@ -21,15 +21,19 @@ The canonical ERC-8004 Identity/Reputation registries are deployed on **mainnet 
 sybil-resistant score → escalation-proof mandate) so the demo is **real on-chain**, not simulated.
 Mainnet's ERC-8004 remains the anchor in production.
 
-## Live on-chain proof (agent #1, read back 2026-10-11)
+## Live on-chain proof (agent #1, read back 2026-10-12)
 | Measure | Value | Meaning |
 |---|---|---|
 | `ownerOf(1)` | `0xda8f…7B51` | executor owns the agent |
-| `receiptCount(1)` | 51 | 50 sock-puppet dust + 1 real verified settlement |
-| `scoreOf(1)` | 6,000,000 micro-USD = **$6** | = $1 settled + 1 distinct verified client × $5 |
-| sybilDetected | true | 50-puppet cluster suppressed to $0 |
-| effSettled | $1.00 | one real verified settlement only |
-| `mandateOf(1)` | tier=NONE, maxSpend=$0 | score $6 < $50 low-tier threshold → no authority |
+| `scoreOf(1)` | 21,000,000 micro-USD = **$21** | = $6 effectively settled + 3 distinct verified clients × $5 |
+| settledMicroUsd | 6,005,000 = **$6.005** | cumulative settled money |
+| effectivelySettledMicroUsd | 6,000,000 = **$6** | after sybil-cluster suppression |
+| distinctVerifiedClients | 3 | distinct passkey-verified buyers |
+| sybilDetected | true | puppy cluster suppressed to $0 |
+| `mandateOf(1)` | tier=NONE, maxSpend=$0 | score $21 < $50 low-tier threshold → no authority |
+
+> These values move as live settlements land — re-read with `node src/monad/merit-contracts.mjs`
+> (via `onchainScoreOf(1)`) rather than trusting this snapshot.
 
 ## Events emitted live (drives the Envio indexer)
 Both enriched events confirmed on-chain in the demo broadcast (block ~70068431):
