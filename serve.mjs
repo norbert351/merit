@@ -17,7 +17,8 @@ const PORT = process.env.MERIT_PORT || 8120;
 createServer((req,res)=>{
   const url = new URL(req.url, `http://${req.headers.host}`);
   let p = decodeURIComponent(url.pathname);
-  if(p==="/"||p==="/index.html") p="/index.html";
+  if(p==="/"||p==="/index.html") p="/landing.html";
+  else if(p==="/app"||p==="/app/") p="/app.html";
   const file = normalize(join(PUBLIC, p));
   if(!file.startsWith(PUBLIC) || !existsSync(file)){
     res.writeHead(404,{"content-type":"text/plain"}); res.end("404"); return;

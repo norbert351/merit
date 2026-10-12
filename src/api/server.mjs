@@ -391,9 +391,11 @@ async function handle(req, res) {
     }
 
     // Serve the static UI too, so `node src/api/server.mjs` is a single-process demo.
-    const file = p === "/" ? "/index.html" : p;
-    const full = join(PUBLIC, file.replace(/\.\./g, ""));
-    if (existsSync(full) && !p.startsWith("/api")) {
+        // Landing at / (marketing) · product at /app (live ledger) — one design system, both pages.
+        let file = p === "/" ? "/landing.html" : p;
+        if (p === "/app" || p === "/app/") file = "/app.html";
+        const full = join(PUBLIC, file.replace(/\.\./g, ""));
+        if (existsSync(full) && !p.startsWith("/api")) {
       const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
       const ext = full.slice(full.lastIndexOf("."));
       res.writeHead(200, { "content-type": MIME[ext] || "application/octet-stream" });

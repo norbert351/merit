@@ -29,7 +29,7 @@
 npm test              # 34 tests (engine + x402 money path + API + live P256 + payment fail-closed + parity)
 npm run test:contracts # 17 Foundry tests (Merit moat + GuardedWallet mandate enforcement)
 npm start             # the CLI demo launcher: both sock-puppet demos + the escalation-proof mandate
-npm run api           # API + UI on http://127.0.0.1:8130  (the hire-then-settle app)
+npm run api           # API + UI: landing at / , hire-then-settle app at http://127.0.0.1:8130/app
 npm run seed          # populate the receipt ledger with the 4 demo agents
 node scripts/settle-demo.mjs   # end-to-end: register passkey -> 402 -> sign -> settle (verified via 0x0100)
 ```

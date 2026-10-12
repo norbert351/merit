@@ -92,9 +92,9 @@ moat + event assertions). Live paid loop over HTTP: `node scripts/settle-demo.mj
 ## Reproduce / run
 ```bash
 npm install
-npm test                          # 27 JS tests   (needs Monad testnet RPC for the live-precompile tests)
-npm run test:contracts            # 8 Foundry tests
-npm run api                       # API + UI on http://127.0.0.1:8130
+npm test                          # 34 JS tests   (engine + x402 money path + API + live P256 + passkey + payment fail-closed + parity)
+npm run test:contracts            # 17 Foundry tests (Merit moat + GuardedWallet mandate enforcement)
+npm run api                       # API + UI: landing at / , hire-then-settle app at http://127.0.0.1:8130/app
 node scripts/settle-demo.mjs      # E2E: register passkey -> 402 -> sign -> settle (verified via 0x0100)
 ```
 Env: `MERIT_EXECUTOR_KEY` (optional, unlocks live settle) · `MERIT_NETWORK` (testnet|mainnet) ·
