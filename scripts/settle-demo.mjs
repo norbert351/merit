@@ -1,13 +1,12 @@
-// Merit — end-to-end "verified client" settlement over the LIVE HTTP product surface.
+// Merit — end-to-end "verified client" settlement over the LIVE HTTP product surface (HARDENED).
 //
 // Proves the paid path PAST the challenge (not just at it):
-//   1. generate a P-256 passkey, register it      POST /api/passkey/register
-//   2. request the challenge (no signature)       POST /api/settle  -> HTTP 402 + PAYMENT-REQUIRED
+//   1. register a P-256 passkey (proof-of-possession via a server challenge)
+//   2. request a server-issued payment challenge  POST /api/settle  -> HTTP 402 + challenge
 //   3. sign the challenge message with the passkey
-//   4. replay WITH the assertion                  -> settles + verified=true (precompile 0x0100)
-//   5. read the score back                        GET  /api/score/:id
-//
-// Then a negative control: the SAME flow with a forged signature must settle as UNVERIFIED.
+//   4. replay WITH challengeId + paymentId + assertion  -> settle + verified (precompile 0x0100)
+//   5. read the score back                            GET /api/score/:id
+// Then negative controls: replaying the challenge and a forged signature must both be refused.
 //
 //   BASE=http://127.0.0.1:8130 node scripts/settle-demo.mjs
 import { generatePasskey } from "../src/identity/passkey-client.mjs";
@@ -23,39 +22,54 @@ async function postJson(p, body, headers = {}) {
   return { status: r.status, headers: r.headers, json: j };
 }
 
-line(`\n═══ Merit verified-client settlement — ${BASE} ═══\n`);
+line(`\n═══ Merit verified-client settlement (hardened) — ${BASE} ═══\n`);
 
-// 1) register a passkey
+// 1) register a passkey with proof-of-possession via a server challenge
 const pk = await generatePasskey();
 const clientId = `client-${Date.now().toString(36)}`;
-const reg = await postJson("/api/passkey/register", { clientId, pubX: pk.pubX, pubY: pk.pubY, label: "e2e verified client" });
-line(`1. register passkey     -> ${reg.status}  clientId=${clientId}  derived-identity=${reg.json?.client?.address}`);
+const regCh = await postJson("/api/passkey/challenge", { clientId });
+const regSig = await pk.sign(regCh.json.message);
+const reg = await postJson("/api/passkey/register", { clientId, pubX: pk.pubX, pubY: pk.pubY, challengeId: regCh.json.challengeId, passkey: regSig });
+line(`1. register passkey       -> ${reg.status}  clientId=${clientId}  identity=${reg.json?.client?.address}`);
+if (!reg.ok) { line("❌ registration failed: " + reg.json?.error); process.exit(1); }
 
-// 2) challenge (no payment signature)
-const c = await postJson("/api/settle", { agentId: AGENT, amountUsd: AMOUNT, clientId, nonce: "e2e-1" });
-line(`2. request challenge    -> ${c.status} ${c.json?.error}   PAYMENT-REQUIRED=${c.headers.get("payment-required") ? "present" : "MISSING"}`);
-const signMessage = c.json?.challenge?.verifiedClient?.signMessage;
-line(`   sign this message    -> ${signMessage}`);
+// 2) request a server-issued payment challenge
+const c = await postJson("/api/settle", { agentId: AGENT, amountUsd: AMOUNT, clientId });
+line(`2. request challenge      -> ${c.status} ${c.json?.error}  PAYMENT-REQUIRED=${c.headers.get("payment-required") ? "present" : "MISSING"}`);
+const { challengeId, message } = c.json?.challenge?.verifiedClient?.challenge || {};
+line(`   sign this message      -> ${message}`);
 
-// 3) sign the challenge with the passkey
-const { r, s } = await pk.sign(signMessage);
-
-// 4) replay with the assertion
+// 3/4) sign the challenge + replay WITH challengeId + paymentId + assertion
+const { r, s } = await pk.sign(message);
+const paymentId = `e2e-${Date.now().toString(36)}`;
 const settle = await postJson("/api/settle",
-  { agentId: AGENT, amountUsd: AMOUNT, clientId, nonce: "e2e-1", passkey: { r, s } },
+  { agentId: AGENT, amountUsd: AMOUNT, clientId, challengeId, paymentId, passkey: { r, s } },
   { "payment-signature": "0x" + "ab".repeat(32) });
-line(`3. settle WITH passkey  -> ${settle.status}  status=${settle.json?.status}  verified=${settle.json?.verified}  method=${settle.json?.verifyMethod}`);
-line(`   note: ${settle.json?.verifyNote}`);
-line(`   newScore=${settle.json?.newScore}  mandate.tier=${settle.json?.newMandate?.tierName}`);
+line(`3. settle WITH passkey    -> ${settle.status}${settle.json?.status ? "  status=" + settle.json.status : ""}  verified=${settle.json?.verified}  method=${settle.json?.verifyMethod}`);
+line(`   note: ${settle.json?.verifyNote}\n   newScore=${settle.json?.newScore}  mandate.tier=${settle.json?.newMandate?.tierName}`);
 
-// 5) negative control — forged signature, same client
-const forged = { r, s: "0x" + s.slice(2, -2) + (s.slice(-2) === "ff" ? "00" : "ff") };
-const bad = await postJson("/api/settle",
-  { agentId: AGENT, amountUsd: AMOUNT, clientId, nonce: "e2e-2", passkey: forged },
+// 5a) replay the SAME challenge -> must be blocked (single-use)
+const replay = await postJson("/api/settle",
+  { agentId: AGENT, amountUsd: AMOUNT, clientId, challengeId, paymentId: "e2e-" + Date.now().toString(36) + "-b", passkey: { r, s } },
   { "payment-signature": "0x" + "ab".repeat(32) });
-line(`4. settle FORGED sig    -> ${bad.status}  verified=${bad.json?.verified}  (must be false)`);
-line(`   note: ${bad.json?.verifyNote}`);
+line(`4. replay same challenge  -> ${replay.status} ${replay.json?.error || replay.json?.verifyNote}`);
 
-const ok = settle.json?.verified === true && bad.json?.verified === false;
-line(`\n${ok ? "✅ PAID LOOP PROVEN" : "❌ loop failed"}: valid passkey verified via 0x0100; forged signature refused.\n`);
+// 5b) duplicate paymentId -> must be blocked (idempotency)
+const dupCh = await postJson("/api/settle", { agentId: AGENT, amountUsd: AMOUNT, clientId });
+const dupSig = await pk.sign(dupCh.json?.challenge?.verifiedClient?.challenge?.message);
+const dup = await postJson("/api/settle",
+  { agentId: AGENT, amountUsd: AMOUNT, clientId, challengeId: dupCh.json?.challenge?.verifiedClient?.challenge?.challengeId, paymentId, passkey: dupSig },
+  { "payment-signature": "0x" + "ab".repeat(32) });
+line(`5. duplicate paymentId    -> ${dup.status} ${dup.json?.error || dup.json?.verifyNote}`);
+
+// 5c) forged signature -> verified=false
+const forgeCh = await postJson("/api/settle", { agentId: AGENT, amountUsd: AMOUNT, clientId });
+const forgeSig = await pk.sign(forgeCh.json?.challenge?.verifiedClient?.challenge?.message);
+const forged = await postJson("/api/settle",
+  { agentId: AGENT, amountUsd: AMOUNT, clientId, challengeId: forgeCh.json?.challenge?.verifiedClient?.challenge?.challengeId, paymentId: "e2e-" + Date.now().toString(36) + "-f", passkey: { r, s: "0x" + forgeSig.s.slice(2, -2) + (forgeSig.s.slice(-2) === "ff" ? "00" : "ff") } },
+  { "payment-signature": "0x" + "ab".repeat(32) });
+line(`6. settle FORGED sig      -> ${forged.status}  verified=${forged.json?.verified}  (must be false)`);
+
+const ok = settle.json?.verified === true && replay.json?.verifyNote && /used|expired/i.test(replay.json?.verifyNote || "") && dup.json?.error && /replay|already/i.test(dup.json?.error || "") && forged.json?.verified === false;
+line(`\n${ok ? "✅ HARDENED PAID LOOP PROVEN" : "❌ loop failed"}: verified via 0x0100; forged refused; challenge replay + duplicate paymentId blocked.\n`);
 process.exit(ok ? 0 : 1);

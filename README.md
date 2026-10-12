@@ -17,15 +17,17 @@
 - ✅ **Phase 2** — on-chain re-derivable score (`onchain-score.mjs`) **+ Envio indexer** of the receipt graph (`indexer/`)
 - ✅ **Phase 3** — binding, escalation-proof mandate (`mandate.mjs`) + on-chain `MeritReputation.recordReceipt`/`scoreOf`
 - ✅ **Phase 4** — hire-then-settle **API + UI** (`src/api/server.mjs` + `public/`), mobile-first, honest live/demo labeling
-- ✅ **Passkey verified-client rail** — `src/identity/passkey.mjs` + `passkey-client.mjs`: a client registers a P-256 key and signs the x402 challenge; the assertion is checked by Monad's **P256 precompile `0x0100`** before any receipt may be marked verified
-- ✅ **27/27 JS tests pass** (incl. live-precompile verify + forged-signature refusal) + **8/8 contract tests pass** + full demo launcher (`npm start`)
+- ✅ **Passkey verified-client rail** — `src/identity/passkey.mjs` + `passkey-client.mjs`: a client registers a P-256 key (proof-of-possession, immutable binding) and signs a **server-issued single-use challenge**; the assertion is checked by Monad's **P256 precompile `0x0100`** before any receipt may be marked verified
+- ✅ **Payment state machine** — `src/payments/verify.mjs`: fail-closed facilitator/settlement verification + `paymentId` idempotency (exactly one trusted receipt per payment)
+- ✅ **Execution-boundary mandate** — `contracts/src/GuardedWallet.sol`: a guarded wallet **reverts** any transfer exceeding the agent's earned on-chain score (proven live on testnet)
+- ✅ **34/34 JS tests pass** (incl. live-precompile verify, forged-refusal, payment fail-closed, parity) + **17/17 contract tests pass** + full demo launcher (`npm start`)
 - ✅ **LIVE on Monad testnet** — merchant suite at `0x92A1…114D`; real x402 `recordReceipt` tx settled on-chain (err===null)
 
 ## Run it
 
 ```bash
-npm test              # 27 tests (engine + x402 money path + API + live P256-precompile verify)
-npm run test:contracts # 8 Foundry tests (the on-chain moat proof)
+npm test              # 34 tests (engine + x402 money path + API + live P256 + payment fail-closed + parity)
+npm run test:contracts # 17 Foundry tests (Merit moat + GuardedWallet mandate enforcement)
 npm start             # the CLI demo launcher: both sock-puppet demos + the escalation-proof mandate
 npm run api           # API + UI on http://127.0.0.1:8130  (the hire-then-settle app)
 npm run seed          # populate the receipt ledger with the 4 demo agents
@@ -50,9 +52,11 @@ only on `err===null`.
 - `Plan.md` — the master plan (thesis, anti-thesis test, architecture, roadmap, risks, gating)
 - `ARCHITECTURE.md` — system diagram + the "remove a rail → what happens" counterfactual table
 - `docs/TECHNICAL.md` — stack, algorithm, data model, contract addresses, API, reproduce
+- `docs/SECURITY_AUDIT.md` · `docs/THREAT_MODEL.md` · `docs/TESTING.md` · `docs/REMEDIATION_REPORT.md` — security review, threats, tests, remediation
 - `docs/ROADMAP.md` — demo → product path
 - `docs/SUBMISSION.md` — paste-ready write-up · `docs/rubric.md` — judge-verification map
 - `src/identity/passkey.mjs` — **the verified-client rail**: P-256 passkey assertion verified by Monad's `0x0100` precompile
+- `contracts/src/GuardedWallet.sol` — **execution-boundary mandate**: a transfer over the earned cap reverts on-chain
 - `src/reputation/onchain-score.mjs` — the sybil-resistant scoring engine (the moat), re-derivable by a stranger
 - `src/mandate/mandate.mjs` — the binding, escalation-proof authority cap
 - `src/api/server.mjs` — the hire-then-settle API (the product surface)

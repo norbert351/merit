@@ -55,32 +55,54 @@ test("API — DEMO 1: 50 sock puppets cannot buy a score (suppression holds)", a
   assert.equal(a1.score.effectivelySettledUsd, 245, "none of the $0.0001 dust moved the score");
 });
 
-test("API — DEMO 2: x402 settlement is challenged, and only a passkey earns the verified floor", async () => {
+test("API — DEMO 2: settle is challenged; only a valid passkey earns the verified floor; replay/dup blocked", async () => {
   const before = (await get("/api/agent/4")).agent;
   assert.equal(before.score.scoreUsd, 0);
 
-  // Step 1: no payment signature -> real HTTP 402 challenge that advertises the passkey rail
-  const c = await post("/api/settle", { agentId: 4, amountUsd: 5 });
+  // Step 1: no payment signature -> real HTTP 402 + server-issued single-use challenge
+  const c = await post("/api/settle", { agentId: 4, amountUsd: 5, clientId: "anon-client" });
   assert.equal(c.status, 402, "settle without a payment signature is challenged, never free");
   assert.ok(c.headers.get("payment-required"), "PAYMENT-REQUIRED header carries the challenge");
   const ch = await c.json();
-  assert.equal(ch.challenge.verifiedClient.method, "p256-precompile-0x0100", "the challenge names the P256 precompile rail");
+  assert.equal(ch.challenge.verifiedClient.method, "p256-precompile-0x0100");
+  assert.ok(ch.challenge.verifiedClient.challenge?.challengeId, "a server-side single-use challenge is issued");
+  assert.ok(ch.challenge.verifiedClient.challenge?.message);
+  const { challengeId } = ch.challenge.verifiedClient.challenge;
 
-  // Step 2: replay with a payment signature but NO passkey assertion -> settles, but UNVERIFIED
-  const r = await post("/api/settle", { agentId: 4, amountUsd: 5, payer: "0xbuyerTest" }, { "payment-signature": "sig" });
+  // Step 2: replay with a signature but NO registered passkey -> settles, but UNVERIFIED
+  const r = await post("/api/settle",
+    { agentId: 4, amountUsd: 5, clientId: "anon-client", challengeId, paymentId: "pay-1" },
+    { "payment-signature": "sig" });
   const j = await r.json();
   assert.equal(j.ok, true);
   assert.equal(j.status, "settled");
-  assert.equal(j.mode, "demo", "still demo: labeled honestly, not claimed on-chain");
-  assert.equal(j.verified, false, "no passkey assertion => NEVER counted as a verified client");
+  assert.equal(j.mode, "demo");
+  assert.equal(j.verified, false, "no registered passkey => NEVER a verified client");
   assert.equal(j.verifyMethod, null);
 
   // Step 3: the settled money moved the score, but no verified-client floor was granted
   const after = (await get("/api/agent/4")).agent;
   assert.equal(after.score.scoreUsd, 5, "5 settled, 0 verified bonus (identity was not proven)");
   assert.equal(after.score.distinctVerifiedClients, 0);
-  assert.equal(after.receipts.length, 1);
-  assert.equal(after.receipts[0].verified, false);
+
+  // Step 4: reusing the SAME paymentId cannot create a second receipt (idempotency)
+  const c2 = await post("/api/settle", { agentId: 4, amountUsd: 5, clientId: "anon-client" });
+  const ch2 = await c2.json();
+  const dup = await post("/api/settle",
+    { agentId: 4, amountUsd: 5, clientId: "anon-client", challengeId: ch2.challenge.verifiedClient.challenge.challengeId, paymentId: "pay-1" },
+    { "payment-signature": "sig" });
+  assert.equal(dup.status, 409, "replaying the same payment must not double-credit");
+  const afterDup = (await get("/api/agent/4")).agent;
+  assert.equal(afterDup.receipts.length, 1, "still exactly one receipt");
+
+  // Step 5: reusing a consumed challenge with a NEW paymentId can never grant verification
+  const c3 = await post("/api/settle", { agentId: 4, amountUsd: 5, clientId: "anon-client" });
+  const ch3 = await c3.json();
+  const chId3 = ch3.challenge.verifiedClient.challenge.challengeId;
+  const replayCh = await post("/api/settle",
+    { agentId: 4, amountUsd: 5, clientId: "anon-client", challengeId: chId3, paymentId: "pay-1" /* already used */ },
+    { "payment-signature": "sig" });
+  assert.equal(replayCh.status, 409, "same paymentId again blocked");
 });
 
 test("API — /api/mandate/enforce is escalation-proof (Bankr refutation)", async () => {

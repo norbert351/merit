@@ -2,7 +2,8 @@
 // Identity contract: 0x8004A1...  Reputation: 0x8004BA...
 // ABI functions taken verbatim from the ERC-8004 spec (eth/ERCs/erc-8004.md).
 
-import { createPublicClient, createWalletClient, http, parseEther } from "viem";
+import { createPublicClient, createWalletClient, http, parseEther, getAddress, keccak256, toBytes } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { MONAD, ERC8004_REGISTRIES } from "./config.mjs";
 
 const IDENTITY_ABI = [
@@ -33,30 +34,34 @@ export function publicClient(which = "testnet") {
 
 /**
  * Register a Merit agent in the ERC-8004 Identity Registry on Monad.
- * Returns the assigned agentId (an ERC-721 token id).
+ * Returns the assigned agentId — the actual token id parsed from the `Registered` EVENT,
+ * NOT the transaction hash (a distinct, easily confounded value).
  * Requires a funded wallet on the chosen network (gas for register()).
  */
 export async function registerAgent({ which = "testnet", privateKey, agentURI }) {
   const cfg = MONAD[which] || MONAD.testnet;
-  const wallet = createWalletClient({ account: privateKey, chain: chain(which), transport: http(cfg.rpcUrl) });
+  const account = privateKeyToAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
+  const wallet = createWalletClient({ account, chain: chain(which), transport: http(cfg.rpcUrl) });
   const hash = await wallet.writeContract({
     address: ERC8004_REGISTRIES.identity,
     abi: IDENTITY_ABI,
     functionName: "register",
     args: [agentURI],
-    // gas estimate fallback if the public RPC rejects fee estimation on a fresh burn account
   });
   // verify err===null via transaction receipt (never trust broadcast alone)
   const receipt = await publicClient(which).waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") {
     throw new Error(`register() reverted on-chain (status=${receipt.status})`);
   }
-  // agentId is the new token's id == the registration block's event. The spec emits
-  // Registered(agentId, agentURI, owner). We resolve owner->tokenId via logs.
-  const logs = await publicClient(which).getTransactionReceipt({
-    hash,
-  });
-  return { txHash: hash, blockNumber: Number(logs.blockNumber), agentId: hash }; // agentId refined below
+  // The spec emits Registered(agentId, agentURI, owner); agentId is an INDEXED uint256 -> topics[1].
+  // Parse it from the receipt logs; if absent, fail loudly (never return a fabricated id).
+  const REGISTERED_TOPIC = keccak256(toBytes("Registered(uint256,string,address)"));
+  const log = (receipt.logs || []).find((l) => l.topics?.[0]?.toLowerCase() === REGISTERED_TOPIC);
+  const agentId = log ? BigInt(log.topics[1]).toString() : null;
+  if (agentId == null) {
+    throw new Error("register() succeeded but no Registered event was emitted; cannot resolve agentId");
+  }
+  return { txHash: hash, blockNumber: Number(receipt.blockNumber), agentId: Number(agentId), registry: ERC8004_REGISTRIES.identity, chainId: cfg.chainId };
 }
 
 /** Resolve the ERC-8004 identity registry address (cross-check vs hardcoded). */
