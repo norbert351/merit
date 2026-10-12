@@ -10,6 +10,7 @@
     "api": "NODE_OPTIONS=--dns-result-order=ipv4first node src/api/server.mjs",
     "p256": "NODE_OPTIONS=--dns-result-order=ipv4first node scripts/p256probe.mjs",
     "settle:demo": "NODE_OPTIONS=--dns-result-order=ipv4first node scripts/settle-demo.mjs",
+    "parity": "NODE_OPTIONS=--dns-result-order=ipv4first node scripts/indexer-parity.mjs",
     "seed": "NODE_OPTIONS=--dns-result-order=ipv4first node src/api/seed.mjs",
     "ui": "node serve.mjs",
     "dev": "NODE_OPTIONS=--dns-result-order=ipv4first node src/api/server.mjs"

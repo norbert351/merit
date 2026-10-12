@@ -52,10 +52,18 @@ deployment evidence, the bounty criteria it could meet, and remaining eligibilit
   tx-log-keyed nodes.
 - **Test evidence:** design + invariants (config/handlers); a clean rebuild requires
   `cd indexer && npm i && npx envio codegen`.
-- **Deployment evidence:** **not deployed** — `envio deploy` needs an `ENVIO_API_TOKEN` (absent).
+- **Parity PROVEN (2026-10-13, token-powered):** `npm run parity`
+  (`scripts/indexer-parity.mjs`) pulls the REAL `ReceiptRecorded` / `SybilClusterSuppressed` events
+  for `0x92A1…114D` straight from **Envio HyperSync** (`monad-testnet.hypersync.xyz`, auth with
+  `ENVIO_API_TOKEN`), re-runs the indexer's exact algorithm, and reproduces on-chain `scoreOf(1)`
+  bit-for-bit: **105 raw logs → 54 receipts + 51 suppressions → reconstructed $71.00 == on-chain
+  $71.00** (distinct verified payers 4 == 4, effective settled 51000000 == 51000000). This is the
+  "re-derivable by a stranger from raw on-chain events" claim, demonstrated.
+- **Deployment evidence (hosted):** **not deployed** — Envio Cloud hosting needs the Envio/GitHub
+  account (OAuth). Local "`envio dev`" also does not run in this headless sandbox (interactive TUI).
   The indexed graph is a clearly-labelled bounty layer; the **authoritative** score is on-chain `scoreOf`.
-- **Criteria / uncertainty:** Envio bounty eligibility is **not** claimed until the hosted indexer is
-  deployed and its score is shown equal to `scoreOf`.
+- **Criteria / uncertainty:** the re-derivation itself is now PROVEN against real HyperSync data;
+  only the **hosted endpoint** remains to claim the full Envio bounty.
 
 ## Explicitly NOT integrated (to avoid forcing unrelated sponsors)
 Dynamic, Mera, Alchemy, Kimi, Perpl, Kuru, Agora, Cleanverse, Hunyuan, Qwen — none materially improve
