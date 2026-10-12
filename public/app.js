@@ -287,27 +287,31 @@ function doSettle(app,a,s){
   const amt=parseFloat($("#settleAmt",app).value||"5");
   if(amt<=0){ flash(st,"err","Enter an amount above $0."); return; }
   btn.disabled=true; st.hidden=false;
-  flash(st,"err","Requesting x402 challenge…");
+  flash(st,"err","Requesting passkey registration challenge…");
   setTimeout(async ()=>{
     try{
       const base = BASE || location.origin;
       if(LIVE.ok){
-        // 1) the client's passkey identity (P-256, persisted this session)
+        // 1) proof-of-possession registration: server-issued challenge -> sign -> bind (immutable)
         const pk=await getPasskey();
+        const rc=await fetch(`${base}/api/passkey/challenge`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({clientId:pk.clientId})});
+        const rcj=await rc.json().catch(()=>({}));
+        const regSig=rcj.message?await pk.sign(rcj.message):null;
         await fetch(`${base}/api/passkey/register`,{method:"POST",headers:{"content-type":"application/json"},
-          body:JSON.stringify({clientId:pk.clientId,pubX:pk.pubX,pubY:pk.pubY,label:"browser passkey"})});
-        const nonce="ui-"+Date.now().toString(36);
+          body:JSON.stringify({clientId:pk.clientId,pubX:pk.pubX,pubY:pk.pubY,label:"browser passkey",challengeId:rcj.challengeId,passkey:regSig})});
+        flash(st,"err","x402 challenge → signing with P-256 → verifying via Monad precompile 0x0100…");
         // 2) unsigned call -> real HTTP 402 challenge (names the passkey rail + what to sign)
-        const challenge=await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json"},
-          body:JSON.stringify({agentId:a.id,amountUsd:amt,clientId:pk.clientId,nonce})});
+        const challenge=await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({agentId:a.id,amountUsd:amt,clientId:pk.clientId})});
         if(challenge.status===402){
           const cj=await challenge.json().catch(()=>({}));
-          const msg=cj.challenge?.verifiedClient?.signMessage;
+          const ch=cj.challenge?.verifiedClient?.challenge||{};
+          const msg=ch.message;
           flash(st,"err","Passkey signing → verifying via Monad precompile 0x0100…");
-          const sig = msg ? await pk.sign(msg) : {r:null,s:null};
-          // 3) replay with the passkey assertion -> settle + verified-client determination
+          const sig=msg?await pk.sign(msg):{r:null,s:null};
+          const paymentId=`ui-${Date.now().toString(36)}`;
+          // 3) replay with challengeId + paymentId + assertion -> settle + verified-client determination
           const r=await fetch(`${base}/api/settle`,{method:"POST",headers:{"content-type":"application/json","payment-signature":"ui-sig"},
-            body:JSON.stringify({agentId:a.id,amountUsd:amt,clientId:pk.clientId,nonce,passkey:sig})});
+            body:JSON.stringify({agentId:a.id,amountUsd:amt,clientId:pk.clientId,challengeId:ch.challengeId,paymentId,passkey:sig})});
           const j=await r.json();
           if(j.ok){
             const live = j.mode==="live" ? `Settled on-chain: ${j.txHash}` : `Settled (demo ledger): ${j.txHash}`;
